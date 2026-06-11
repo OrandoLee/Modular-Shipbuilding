@@ -51,8 +51,8 @@ http://127.0.0.1:4173/Modular-Shipbuilding/
 1. 安装 Node LTS
 2. 执行 `npm ci`
 3. 执行 `npm run build`
-4. 上传 `dist`
-5. 通过官方 GitHub Pages Actions 发布
+4. 将 `dist` 发布到 `gh-pages` 分支
+5. GitHub Pages 从 `gh-pages` 分支对外发布
 
 当前 `vite.config.ts` 会自动区分环境：
 
