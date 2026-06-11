@@ -25,11 +25,23 @@ npm install
 npm run dev
 ```
 
+本地开发地址：
+
+```txt
+http://127.0.0.1:5173/
+```
+
 ## 构建与预览
 
 ```bash
 npm run build
 npm run preview
+```
+
+预览生产构建时访问：
+
+```txt
+http://127.0.0.1:4173/Modular-Shipbuilding/
 ```
 
 ## GitHub Pages 部署
@@ -42,13 +54,13 @@ npm run preview
 4. 上传 `dist`
 5. 通过官方 GitHub Pages Actions 发布
 
-当前 `vite.config.ts` 使用：
+当前 `vite.config.ts` 会自动区分环境：
 
 ```ts
-base: '/Modular-Shipbuilding/'
+base: command === 'serve' ? '/' : '/Modular-Shipbuilding/'
 ```
 
-这是为了匹配目标仓库 `OrandoLee/Modular-Shipbuilding` 的 GitHub Pages 子路径。如果部署到根域名、Vercel 或 Netlify，请改为：
+本地开发使用 `/`，所以可以直接打开 `http://127.0.0.1:5173/`。生产构建使用 `/Modular-Shipbuilding/`，用于匹配目标仓库 `OrandoLee/Modular-Shipbuilding` 的 GitHub Pages 子路径。如果部署到根域名、Vercel 或 Netlify，请把生产 base 改为：
 
 ```ts
 base: '/'
