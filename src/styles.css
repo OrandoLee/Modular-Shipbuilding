@@ -220,6 +220,89 @@ button {
   background: linear-gradient(90deg, rgba(67, 129, 214, 0.22), rgba(19, 37, 57, 0.54));
 }
 
+.start-guide {
+  position: absolute;
+  right: 4.6vw;
+  bottom: 12vh;
+  width: min(430px, 36vw);
+  padding: 22px;
+  border: 1px solid rgba(118, 182, 255, 0.32);
+  background: rgba(5, 10, 16, 0.76);
+  color: #eef6ff;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(18px);
+  transition: opacity 0.28s ease, transform 0.28s ease, visibility 0.28s ease;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.lab-root.is-guide-open .start-guide {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+.start-guide ol {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: guide;
+}
+
+.start-guide li {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: start;
+  color: rgba(232, 243, 255, 0.74);
+  line-height: 1.55;
+  counter-increment: guide;
+}
+
+.start-guide li::before {
+  content: counter(guide, decimal-leading-zero);
+  color: #77b9ff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.start-guide strong,
+.start-guide span {
+  display: block;
+}
+
+.start-guide strong {
+  color: #f7fbff;
+  margin-bottom: 2px;
+}
+
+.start-guide span {
+  font-size: 13px;
+}
+
+.guide-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.guide-actions button {
+  min-height: 40px;
+  border: 1px solid rgba(141, 190, 255, 0.28);
+  background: rgba(5, 10, 16, 0.58);
+  color: #eef6ff;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.guide-actions button:first-child {
+  border-color: rgba(110, 205, 255, 0.8);
+  background: rgba(38, 104, 151, 0.32);
+}
+
 .lab-stage {
   position: absolute;
   inset: 0;
@@ -534,6 +617,19 @@ button {
   .start-copy {
     width: 92vw;
     bottom: 8vh;
+  }
+
+  .start-guide {
+    right: 4vw;
+    left: 4vw;
+    bottom: 4vh;
+    width: auto;
+    max-height: 58vh;
+    overflow: auto;
+  }
+
+  .lab-root.is-guide-open .start-copy {
+    opacity: 0.16;
   }
 
   .start-grid {

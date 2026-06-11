@@ -105,10 +105,26 @@ export class Lab04App {
             <button class="start-button primary" data-action="enter-lab">
               <span>开始行动</span><b>-></b>
             </button>
-            <button class="start-button" data-action="show-projects">
-              <span>项目编号 04</span><b>-></b>
+            <button class="start-button" data-action="toggle-guide">
+              <span>玩法说明</span><b>-></b>
             </button>
           </div>
+          <aside class="start-guide" aria-label="玩法说明">
+            <div class="panel-heading">
+              <p>玩法说明 / HOW TO PLAY</p>
+              <h3>建造 -> 下水 -> 诊断 -> 改造</h3>
+            </div>
+            <ol>
+              <li><strong>选择模块</strong><span>从模块栏选择船体、浮力、压载、引擎、货物等模块。</span></li>
+              <li><strong>搭建船体</strong><span>左键放置模块，右键或 Delete 删除，R 旋转，C 清空蓝图。</span></li>
+              <li><strong>下水测试</strong><span>点击 Launch，观察船体是否漂浮、下沉、侧倾或前后失衡。</span></li>
+              <li><strong>生成报告</strong><span>查看浮力、重心、吃水与稳定性问题，再回船坞修改设计。</span></li>
+            </ol>
+            <div class="guide-actions">
+              <button data-action="enter-lab">开始建造</button>
+              <button data-action="close-guide">关闭说明</button>
+            </div>
+          </aside>
         </section>
 
         <main class="lab-stage" aria-label="LAB 04 模块造船实验">
@@ -294,7 +310,8 @@ export class Lab04App {
       if (!actionEl) return
       const action = actionEl.dataset.action
       if (action === 'enter-lab') this.enterBuildMode()
-      if (action === 'show-projects') this.enterBuildMode()
+      if (action === 'toggle-guide') this.root.classList.toggle('is-guide-open')
+      if (action === 'close-guide') this.root.classList.remove('is-guide-open')
       if (action === 'back-start') this.showStart()
       if (action === 'clear') this.clearBlueprint()
       if (action === 'launch') this.launch()
@@ -358,6 +375,7 @@ export class Lab04App {
 
   private enterBuildMode(): void {
     this.mode = 'build'
+    this.root.classList.remove('is-guide-open')
     this.shipBody = null
     this.lastFrame = null
     this.startScreen.classList.add('is-hidden')
@@ -376,6 +394,7 @@ export class Lab04App {
 
   private showStart(): void {
     this.mode = 'start'
+    this.root.classList.remove('is-guide-open')
     this.startScreen.classList.remove('is-hidden')
     this.root.classList.remove('is-running', 'is-testing', 'is-reporting')
   }
