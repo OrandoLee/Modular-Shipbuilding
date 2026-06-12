@@ -3,13 +3,23 @@ import type { ModuleDefinition, PlacedModule } from './ModuleDefinition'
 import { MODULE_DEFINITIONS } from './ModuleTypes'
 
 const sharedBox = new THREE.BoxGeometry(0.92, 0.92, 0.92)
+const cannonBaseGeo = new THREE.BoxGeometry(0.82, 0.24, 0.58)
+const cannonCarriageGeo = new THREE.BoxGeometry(0.7, 0.16, 0.42)
+const cannonAxleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.86, 12)
+const cannonWheelGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.08, 20)
+const cannonBarrelGeo = new THREE.CylinderGeometry(0.12, 0.2, 1.02, 24)
+const cannonMuzzleGeo = new THREE.CylinderGeometry(0.19, 0.17, 0.14, 24)
+const cannonBoreGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.018, 18)
+const cannonBandGeo = new THREE.TorusGeometry(0.145, 0.018, 8, 24)
 const rudderShaftGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.96, 18)
 const rudderTillerGeo = new THREE.BoxGeometry(0.54, 0.07, 0.12)
 const rudderPinGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.34, 14)
-const cannonBarrelGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.92, 16)
 const rudderBladeGeo = createRudderBladeGeometry()
 
 const materialCache = new Map<string, THREE.MeshStandardMaterial>()
+const cannonWoodMaterial = new THREE.MeshStandardMaterial({ color: '#5a3821', roughness: 0.78, metalness: 0.05 })
+const cannonDarkMaterial = new THREE.MeshStandardMaterial({ color: '#15191d', roughness: 0.42, metalness: 0.72 })
+const cannonBoreMaterial = new THREE.MeshBasicMaterial({ color: '#050607' })
 
 function materialFor(def: ModuleDefinition): THREE.MeshStandardMaterial {
   const key = `${def.type}-${def.color}-${def.emissive ?? ''}`
@@ -53,15 +63,19 @@ export function createModuleMesh(module: PlacedModule): THREE.Group {
   group.name = `module-${module.id}`
   group.userData.moduleId = module.id
 
-  const core = new THREE.Mesh(sharedBox, materialFor(def))
+  const coreGeometry = module.type === 'cannon' ? cannonBaseGeo : sharedBox
+  const coreMaterial = module.type === 'cannon' ? cannonWoodMaterial : materialFor(def)
+  const core = new THREE.Mesh(coreGeometry, coreMaterial)
   core.castShadow = true
   core.receiveShadow = true
+  if (module.type === 'cannon') core.position.y = -0.24
   group.add(core)
 
   const edge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(sharedBox),
+    new THREE.EdgesGeometry(coreGeometry),
     new THREE.LineBasicMaterial({ color: module.type === 'buoyancy' ? '#c7f5ff' : '#d8e6ff', transparent: true, opacity: 0.26 }),
   )
+  if (module.type === 'cannon') edge.position.copy(core.position)
   group.add(edge)
 
   if (module.type === 'engine') {
@@ -105,11 +119,51 @@ export function createModuleMesh(module: PlacedModule): THREE.Group {
   }
 
   if (module.type === 'cannon') {
-    const barrel = new THREE.Mesh(cannonBarrelGeo, materialFor(def))
+    const carriage = new THREE.Mesh(cannonCarriageGeo, cannonWoodMaterial)
+    carriage.position.y = -0.04
+    carriage.castShadow = true
+    carriage.receiveShadow = true
+    group.add(carriage)
+
+    const axle = new THREE.Mesh(cannonAxleGeo, cannonDarkMaterial)
+    axle.rotation.z = Math.PI / 2
+    axle.position.y = -0.08
+    axle.castShadow = true
+    group.add(axle)
+
+    ;[-0.43, 0.43].forEach((x) => {
+      const wheel = new THREE.Mesh(cannonWheelGeo, cannonWoodMaterial)
+      wheel.rotation.z = Math.PI / 2
+      wheel.position.set(x, -0.08, 0)
+      wheel.castShadow = true
+      wheel.receiveShadow = true
+      group.add(wheel)
+    })
+
+    const barrel = new THREE.Mesh(cannonBarrelGeo, cannonDarkMaterial)
     barrel.rotation.z = Math.PI / 2
-    barrel.position.y = 0.32
+    barrel.position.set(0.08, 0.2, 0)
     barrel.castShadow = true
+    barrel.receiveShadow = true
     group.add(barrel)
+
+    const muzzle = new THREE.Mesh(cannonMuzzleGeo, cannonDarkMaterial)
+    muzzle.rotation.z = Math.PI / 2
+    muzzle.position.set(0.62, 0.2, 0)
+    muzzle.castShadow = true
+    group.add(muzzle)
+
+    const bore = new THREE.Mesh(cannonBoreGeo, cannonBoreMaterial)
+    bore.rotation.z = Math.PI / 2
+    bore.position.set(0.695, 0.2, 0)
+    group.add(bore)
+
+    ;[-0.16, 0.24].forEach((x) => {
+      const band = new THREE.Mesh(cannonBandGeo, cannonDarkMaterial)
+      band.rotation.y = Math.PI / 2
+      band.position.set(x, 0.2, 0)
+      group.add(band)
+    })
   }
 
   if (module.type === 'cargo') {

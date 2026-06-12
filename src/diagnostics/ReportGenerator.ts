@@ -19,6 +19,16 @@ export function generateReport(stats: BlueprintStats, frame: RuntimeFrame | null
     }
   }
 
+  if (stats.unstableBlocks > 0) {
+    issues.push(`结构中有 ${stats.unstableBlocks} 个模块存在悬空或断开连接风险，航行时会脱落。`)
+    suggestions.push('让所有模块至少与主体船体相连；悬空模块需要底部支撑，或形成左右/前后两侧同时连接的桥接结构。')
+  }
+
+  if ((frame?.detachedBlocks ?? 0) > 0) {
+    issues.push(`实测过程中已有 ${frame?.detachedBlocks} 个模块从船体上脱落。`)
+    suggestions.push('回到船坞后补强这些模块与主体之间的连接，再重新测试。')
+  }
+
   if (stats.buoyancyMargin < 0) {
     issues.push('船体总浮力不足，无法支撑当前质量。')
     suggestions.push('增加底部或两侧浮力块，或减少金属块、货物与大炮模块。')

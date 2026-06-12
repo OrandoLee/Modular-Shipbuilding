@@ -11,6 +11,7 @@ export type RuntimeFrame = {
   maxRoll: number
   maxPitch: number
   status: string
+  detachedBlocks: number
 }
 
 export type ShipControls = {
@@ -40,6 +41,7 @@ export class ShipRigidBody {
   constructor(
     private readonly stats: BlueprintStats,
     private readonly modules: PlacedModule[],
+    private readonly detachedBlockCount = 0,
   ) {
     this.forwardLocal = this.computeForwardLocal()
   }
@@ -99,6 +101,7 @@ export class ShipRigidBody {
       maxRoll: this.maxRoll,
       maxPitch: this.maxPitch,
       status: this.getStatus(),
+      detachedBlocks: this.detachedBlockCount,
     }
   }
 
@@ -171,6 +174,7 @@ export class ShipRigidBody {
   private getStatus(): string {
     if (this.sunk) return '下沉'
     if (this.capsized) return '翻覆风险'
+    if (this.detachedBlockCount > 0) return '结构脱落'
     if (this.stats.buoyancyMargin < 0) return '浮力不足'
     if (Math.abs(this.rotation.z) > 0.42) return '发生侧倾'
     if (this.rotation.x < -0.35) return '船头过重'

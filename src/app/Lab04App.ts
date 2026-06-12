@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { ShipBlueprint } from '../build/ShipBlueprint'
+import { ShipBlueprint, type StructuralAnalysis } from '../build/ShipBlueprint'
 import { MODULE_DEFINITIONS, MODULE_ORDER } from '../modules/ModuleTypes'
 import type { GridPosition, ModuleType, PlacedModule } from '../modules/ModuleDefinition'
 import { createModuleMesh } from '../modules/ModuleMeshFactory'
@@ -22,7 +22,7 @@ type PointerDownState = {
 type ModuleHit = {
   id: string
   gridPosition: GridPosition
-  normalY: number
+  normal: THREE.Vector3
 }
 
 type PointerTarget = {
@@ -37,6 +37,12 @@ type BuildArea = {
   width: number
   height: number
   length: number
+}
+
+type DetachedModuleVisual = {
+  mesh: THREE.Object3D
+  velocity: THREE.Vector3
+  angularVelocity: THREE.Vector3
 }
 
 const DEFAULT_BUILD_AREA: BuildArea = {
@@ -82,6 +88,7 @@ export class Lab04App {
   private buildArea: BuildArea = { ...DEFAULT_BUILD_AREA }
   private currentRotation = 0
   private hoveredCell: GridPosition | null = null
+  private launchWarningUntil = 0
   private mode: AppMode = 'start'
   private active = false
   private paused = false
@@ -89,6 +96,7 @@ export class Lab04App {
   private lastFrame: RuntimeFrame | null = null
   private pointerDownState: PointerDownState | null = null
   private pressedKeys = new Set<string>()
+  private detachedVisuals = new Map<string, DetachedModuleVisual>()
   private animationHandle = 0
 
   constructor(private readonly root: HTMLDivElement) {}
@@ -445,6 +453,7 @@ export class Lab04App {
 
   private enterBuildMode(): void {
     this.mode = 'build'
+    this.restoreDetachedModules()
     this.root.classList.remove('is-guide-open')
     this.shipBody = null
     this.lastFrame = null
@@ -467,6 +476,7 @@ export class Lab04App {
 
   private showStart(): void {
     this.mode = 'start'
+    this.restoreDetachedModules()
     this.root.classList.remove('is-guide-open')
     this.startScreen.classList.remove('is-hidden')
     this.root.classList.remove('is-running', 'is-testing', 'is-reporting')
@@ -479,6 +489,19 @@ export class Lab04App {
       return
     }
 
+    const structure = this.blueprint.analyzeStructure()
+    if (structure.warnings.length > 0 && Date.now() > this.launchWarningUntil) {
+      this.launchWarningUntil = Date.now() + 3600
+      this.flashLaunch('结构有坍塌风险，再点 Launch 继续', 2600)
+      return
+    }
+
+    const allModules = this.blueprint.getModules()
+    const stableIdSet = new Set(structure.stableModuleIds)
+    const stableModules = allModules.filter((module) => stableIdSet.has(module.id))
+    const simulationModules = stableModules.length > 0 ? stableModules : allModules
+    const simulationStats = this.blueprint.getStats(simulationModules)
+
     this.mode = 'test'
     this.root.classList.add('is-testing')
     this.root.classList.remove('is-reporting')
@@ -486,11 +509,12 @@ export class Lab04App {
     this.waterMesh.visible = true
     this.hoverCube.visible = false
     this.reportPanel.classList.remove('is-visible')
-    this.shipBody = new ShipRigidBody(stats, this.blueprint.getModules())
+    this.shipBody = new ShipRigidBody(simulationStats, simulationModules, structure.unstableModuleIds.length)
     this.updateSelectionHelper(false)
     this.shipBody.reset()
     this.shipGroup.position.copy(this.shipBody.position)
     this.shipGroup.rotation.copy(this.shipBody.rotation)
+    this.prepareDetachedModules(structure)
     this.controls.target.set(0, 0.2, 0)
     this.camera.position.set(6.5, 3.9, 7.8)
     this.rootEl.focus()
@@ -500,7 +524,17 @@ export class Lab04App {
   private resetTest(): void {
     if (this.mode !== 'test') return
     this.pressedKeys.clear()
-    this.shipBody?.reset()
+    this.restoreDetachedModules()
+    const structure = this.blueprint.analyzeStructure()
+    const allModules = this.blueprint.getModules()
+    const stableIdSet = new Set(structure.stableModuleIds)
+    const stableModules = allModules.filter((module) => stableIdSet.has(module.id))
+    const simulationModules = stableModules.length > 0 ? stableModules : allModules
+    this.shipBody = new ShipRigidBody(this.blueprint.getStats(simulationModules), simulationModules, structure.unstableModuleIds.length)
+    this.shipBody.reset()
+    this.shipGroup.position.copy(this.shipBody.position)
+    this.shipGroup.rotation.copy(this.shipBody.rotation)
+    this.prepareDetachedModules(structure)
     this.updateRudderVisuals(1, 0)
     this.lastFrame = null
   }
@@ -534,6 +568,8 @@ export class Lab04App {
   }
 
   private clearBlueprint(): void {
+    this.restoreDetachedModules()
+    this.launchWarningUntil = 0
     this.blueprint.clear()
     this.moduleMeshes.forEach((mesh) => this.shipGroup.remove(mesh))
     this.moduleMeshes.clear()
@@ -674,9 +710,9 @@ export class Lab04App {
 
     const moduleHit = this.intersectModule()
     if (moduleHit) {
-      const stackCell = this.nextFreeCell(moduleHit.gridPosition.x, moduleHit.gridPosition.z)
-      if (!preferOccupied && stackCell && stackCell.y > moduleHit.gridPosition.y && moduleHit.normalY > 0.55) {
-        return { id: '', gridPosition: stackCell, occupied: false }
+      const adjacentCell = this.adjacentCellFromHit(moduleHit)
+      if (!preferOccupied && adjacentCell && !this.blueprint.getAt(adjacentCell)) {
+        return { id: '', gridPosition: adjacentCell, occupied: false }
       }
       return { ...moduleHit, occupied: true }
     }
@@ -708,12 +744,12 @@ export class Lab04App {
     for (const intersection of intersections) {
       if (!(intersection.object instanceof THREE.Mesh)) continue
       const moduleHit = this.moduleHitFromObject(intersection.object)
-      if (moduleHit) return { ...moduleHit, normalY: this.worldNormalY(intersection) }
+      if (moduleHit) return { ...moduleHit, normal: this.worldNormal(intersection) }
     }
     return null
   }
 
-  private moduleHitFromObject(object: THREE.Object3D): Omit<ModuleHit, 'normalY'> | null {
+  private moduleHitFromObject(object: THREE.Object3D): Omit<ModuleHit, 'normal'> | null {
     let current: THREE.Object3D | null = object
     while (current) {
       const position = current.userData.gridPosition as GridPosition | undefined
@@ -724,13 +760,24 @@ export class Lab04App {
     return null
   }
 
-  private worldNormalY(intersection: THREE.Intersection): number {
-    if (!intersection.face) return 0
+  private worldNormal(intersection: THREE.Intersection): THREE.Vector3 {
+    if (!intersection.face) return new THREE.Vector3()
     return intersection.face.normal
       .clone()
       .applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersection.object.matrixWorld))
       .normalize()
-      .y
+  }
+
+  private adjacentCellFromHit(hit: ModuleHit): GridPosition | null {
+    const { normal, gridPosition } = hit
+    const cell = { ...gridPosition }
+    if (normal.y > 0.55) cell.y += 1
+    else if (normal.y < -0.55) cell.y -= 1
+    else if (Math.abs(normal.x) >= Math.abs(normal.z)) cell.x += Math.sign(normal.x)
+    else cell.z += Math.sign(normal.z)
+
+    if (!this.isWithinBuildArea(cell)) return null
+    return cell
   }
 
   private nextFreeCell(x: number, z: number): GridPosition | null {
@@ -752,7 +799,19 @@ export class Lab04App {
     return null
   }
 
+  private isWithinBuildArea(cell: GridPosition): boolean {
+    return (
+      cell.x >= this.minBuildX()
+      && cell.x <= this.maxBuildX()
+      && cell.z >= this.minBuildZ()
+      && cell.z <= this.maxBuildZ()
+      && cell.y >= 0
+      && cell.y < this.buildArea.height
+    )
+  }
+
   private addModuleToScene(module: PlacedModule): void {
+    this.launchWarningUntil = 0
     const mesh = createModuleMesh(module)
     mesh.position.set(module.gridPosition.x, module.gridPosition.y + 0.5, module.gridPosition.z)
     mesh.traverse((object) => {
@@ -764,6 +823,7 @@ export class Lab04App {
   }
 
   private removeAt(position: GridPosition): void {
+    this.launchWarningUntil = 0
     const removed = this.blueprint.removeModule(position)
     if (!removed) return
     const mesh = this.moduleMeshes.get(removed.id)
@@ -773,12 +833,89 @@ export class Lab04App {
     this.updateAllUi()
   }
 
+  private prepareDetachedModules(structure: StructuralAnalysis): void {
+    this.restoreDetachedModules()
+    if (structure.unstableModuleIds.length === 0) return
+
+    const unstableIds = new Set(structure.unstableModuleIds)
+    const center = this.blueprint.getStats().centerOfMass
+    this.shipGroup.updateMatrixWorld(true)
+
+    this.moduleMeshes.forEach((mesh, id) => {
+      if (!unstableIds.has(id)) return
+
+      const worldPosition = new THREE.Vector3()
+      const worldQuaternion = new THREE.Quaternion()
+      mesh.getWorldPosition(worldPosition)
+      mesh.getWorldQuaternion(worldQuaternion)
+      this.shipGroup.remove(mesh)
+      this.scene.add(mesh)
+      mesh.position.copy(worldPosition)
+      mesh.quaternion.copy(worldQuaternion)
+
+      const module = this.blueprint.getModules().find((candidate) => candidate.id === id)
+      const xPush = (module?.gridPosition.x ?? 0) - center.x
+      const zPush = (module?.gridPosition.z ?? 0) - center.z
+      const outward = new THREE.Vector3(xPush, 0, zPush)
+      if (outward.lengthSq() < 0.01) outward.set(Math.random() - 0.5, 0, Math.random() - 0.5)
+      outward.normalize()
+
+      this.detachedVisuals.set(id, {
+        mesh,
+        velocity: outward.multiplyScalar(0.65).add(new THREE.Vector3(0, -0.18, 0)),
+        angularVelocity: new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1.8),
+          THREE.MathUtils.randFloatSpread(1.2),
+          THREE.MathUtils.randFloatSpread(1.8),
+        ),
+      })
+    })
+  }
+
+  private restoreDetachedModules(): void {
+    if (this.detachedVisuals.size === 0) return
+
+    this.detachedVisuals.forEach(({ mesh }, id) => {
+      const module = this.blueprint.getModules().find((candidate) => candidate.id === id)
+      if (!module) {
+        this.scene.remove(mesh)
+        return
+      }
+
+      if (mesh.parent) mesh.parent.remove(mesh)
+      mesh.position.set(module.gridPosition.x, module.gridPosition.y + 0.5, module.gridPosition.z)
+      mesh.rotation.set(0, module.rotation, 0)
+      mesh.scale.set(1, 1, 1)
+      this.shipGroup.add(mesh)
+    })
+    this.detachedVisuals.clear()
+  }
+
+  private updateDetachedModules(delta: number): void {
+    this.detachedVisuals.forEach((visual) => {
+      visual.velocity.y -= 4.6 * delta
+      visual.velocity.multiplyScalar(Math.pow(0.985, delta))
+      visual.mesh.position.addScaledVector(visual.velocity, delta)
+      visual.mesh.rotation.x += visual.angularVelocity.x * delta
+      visual.mesh.rotation.y += visual.angularVelocity.y * delta
+      visual.mesh.rotation.z += visual.angularVelocity.z * delta
+
+      if (visual.mesh.position.y < -1.4) {
+        visual.velocity.y *= -0.16
+        visual.velocity.x *= 0.72
+        visual.velocity.z *= 0.72
+        visual.mesh.position.y = -1.4
+      }
+    })
+  }
+
   private rotateSelectedModule(): boolean {
     if (this.mode !== 'build' || !this.selectedCell || !this.selectedModuleId) return false
 
     const module = this.blueprint.getAt(this.selectedCell)
     if (!module || module.id !== this.selectedModuleId) return false
 
+    this.launchWarningUntil = 0
     module.rotation = this.nextQuarterTurn(module.rotation)
     this.currentRotation = module.rotation
     const mesh = this.moduleMeshes.get(module.id)
@@ -970,6 +1107,7 @@ export class Lab04App {
       this.lastFrame = this.shipBody.update(delta, this.waveField, shipControls)
       this.shipGroup.position.copy(this.shipBody.position)
       this.shipGroup.rotation.copy(this.shipBody.rotation)
+      this.updateDetachedModules(delta)
       this.controls.target.lerp(new THREE.Vector3(this.shipGroup.position.x, this.shipGroup.position.y + 0.45, this.shipGroup.position.z), 0.045)
       this.updateRudderVisuals(delta, shipControls.turn)
       this.updateMarkers()
@@ -980,11 +1118,11 @@ export class Lab04App {
     this.renderer.render(this.scene, this.camera)
   }
 
-  private flashLaunch(message: string): void {
+  private flashLaunch(message: string, duration = 1400): void {
     this.launchButton.textContent = message
     window.setTimeout(() => {
       this.launchButton.textContent = 'Launch'
-    }, 1400)
+    }, duration)
   }
 
   private aspect(): number {

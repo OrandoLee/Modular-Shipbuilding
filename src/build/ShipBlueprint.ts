@@ -16,6 +16,19 @@ export type BlueprintStats = {
   rudderPower: number
   leftRightMassImbalance: number
   frontBackMassImbalance: number
+  floatingBlocks: number
+  disconnectedBlocks: number
+  unstableBlocks: number
+  structuralWarnings: string[]
+}
+
+export type StructuralAnalysis = {
+  floatingModuleIds: string[]
+  disconnectedModuleIds: string[]
+  unstableModuleIds: string[]
+  stableModuleIds: string[]
+  componentCount: number
+  warnings: string[]
 }
 
 const emptyPoint: GridPosition = { x: 0, y: 0, z: 0 }
@@ -67,8 +80,8 @@ export class ShipBlueprint {
     parsed.forEach((module) => this.modules.set(this.key(module.gridPosition), module))
   }
 
-  getStats(): BlueprintStats {
-    const modules = this.getModules()
+  getStats(modules = this.getModules()): BlueprintStats {
+    const structure = this.analyzeStructure(modules)
     if (modules.length === 0) {
       return {
         blocks: 0,
@@ -85,6 +98,10 @@ export class ShipBlueprint {
         rudderPower: 0,
         leftRightMassImbalance: 0,
         frontBackMassImbalance: 0,
+        floatingBlocks: 0,
+        disconnectedBlocks: 0,
+        unstableBlocks: 0,
+        structuralWarnings: [],
       }
     }
 
@@ -155,7 +172,113 @@ export class ShipBlueprint {
       rudderPower,
       leftRightMassImbalance,
       frontBackMassImbalance,
+      floatingBlocks: structure.floatingModuleIds.length,
+      disconnectedBlocks: structure.disconnectedModuleIds.length,
+      unstableBlocks: structure.unstableModuleIds.length,
+      structuralWarnings: structure.warnings,
     }
+  }
+
+  analyzeStructure(modules = this.getModules()): StructuralAnalysis {
+    if (modules.length === 0) {
+      return {
+        floatingModuleIds: [],
+        disconnectedModuleIds: [],
+        unstableModuleIds: [],
+        stableModuleIds: [],
+        componentCount: 0,
+        warnings: [],
+      }
+    }
+
+    const byKey = new Map(modules.map((module) => [this.key(module.gridPosition), module]))
+    const byId = new Map(modules.map((module) => [module.id, module]))
+    const visited = new Set<string>()
+    const components: string[][] = []
+    const directions = [
+      { x: 1, y: 0, z: 0 },
+      { x: -1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: -1, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      { x: 0, y: 0, z: -1 },
+    ]
+
+    for (const module of modules) {
+      if (visited.has(module.id)) continue
+
+      const component: string[] = []
+      const queue = [module]
+      visited.add(module.id)
+
+      for (let cursor = 0; cursor < queue.length; cursor += 1) {
+        const current = queue[cursor]
+        component.push(current.id)
+        for (const direction of directions) {
+          const neighbor = byKey.get(this.key({
+            x: current.gridPosition.x + direction.x,
+            y: current.gridPosition.y + direction.y,
+            z: current.gridPosition.z + direction.z,
+          }))
+          if (!neighbor || visited.has(neighbor.id)) continue
+          visited.add(neighbor.id)
+          queue.push(neighbor)
+        }
+      }
+
+      components.push(component)
+    }
+
+    const supportedScore = (component: string[]): number => component.reduce((score, id) => {
+      const module = byId.get(id)
+      return score + (module?.gridPosition.y === 0 ? 1 : 0)
+    }, 0)
+
+    const mainComponent = [...components].sort((a, b) => {
+      const sizeDelta = b.length - a.length
+      if (sizeDelta !== 0) return sizeDelta
+      return supportedScore(b) - supportedScore(a)
+    })[0] ?? []
+    const mainIds = new Set(mainComponent)
+    const disconnectedModuleIds = components.flatMap((component) => (
+      component === mainComponent ? [] : component
+    ))
+
+    const floatingModuleIds = modules
+      .filter((module) => module.gridPosition.y > 0 && !this.hasDirectSupport(module, byKey) && !this.isBridged(module, byKey))
+      .map((module) => module.id)
+
+    const unstableIds = new Set([...disconnectedModuleIds, ...floatingModuleIds])
+    const stableModuleIds = modules
+      .filter((module) => mainIds.has(module.id) && !unstableIds.has(module.id))
+      .map((module) => module.id)
+
+    const warnings: string[] = []
+    if (components.length > 1) warnings.push(`船体存在 ${components.length} 个互不相连的结构，出航后非主体结构会脱落。`)
+    if (floatingModuleIds.length > 0) warnings.push(`发现 ${floatingModuleIds.length} 个缺少支撑的悬空模块，航行时可能坍塌掉落。`)
+
+    return {
+      floatingModuleIds,
+      disconnectedModuleIds,
+      unstableModuleIds: [...unstableIds],
+      stableModuleIds,
+      componentCount: components.length,
+      warnings,
+    }
+  }
+
+  private hasDirectSupport(module: PlacedModule, byKey: Map<string, PlacedModule>): boolean {
+    const { x, y, z } = module.gridPosition
+    return byKey.has(this.key({ x, y: y - 1, z }))
+  }
+
+  private isBridged(module: PlacedModule, byKey: Map<string, PlacedModule>): boolean {
+    const { x, y, z } = module.gridPosition
+    const hasLeft = byKey.has(this.key({ x: x - 1, y, z }))
+    const hasRight = byKey.has(this.key({ x: x + 1, y, z }))
+    const hasFront = byKey.has(this.key({ x, y, z: z - 1 }))
+    const hasBack = byKey.has(this.key({ x, y, z: z + 1 }))
+    return (hasLeft && hasRight) || (hasFront && hasBack)
   }
 
   private key(position: GridPosition): string {
