@@ -45,11 +45,24 @@ type DetachedModuleVisual = {
   angularVelocity: THREE.Vector3
 }
 
+type CannonProjectile = {
+  mesh: THREE.Mesh
+  velocity: THREE.Vector3
+  age: number
+  light: THREE.PointLight
+}
+
 const DEFAULT_BUILD_AREA: BuildArea = {
   width: 5,
   height: 4,
   length: 7,
 }
+
+const CANNON_MUZZLE_LOCAL = new THREE.Vector3(0.82, 0.2, 0)
+const CANNON_FORWARD_LOCAL = new THREE.Vector3(1, 0, 0)
+const CANNON_COOLDOWN_SECONDS = 0.45
+const CANNON_PROJECTILE_SPEED = 8.6
+const CANNON_PROJECTILE_LIFE = 3.2
 
 export class Lab04App {
   private readonly embed = new URLSearchParams(window.location.search).get('embed') === '1'
@@ -97,6 +110,8 @@ export class Lab04App {
   private pointerDownState: PointerDownState | null = null
   private pressedKeys = new Set<string>()
   private detachedVisuals = new Map<string, DetachedModuleVisual>()
+  private projectiles: CannonProjectile[] = []
+  private lastCannonFireTime = -Infinity
   private animationHandle = 0
 
   constructor(private readonly root: HTMLDivElement) {}
@@ -454,6 +469,7 @@ export class Lab04App {
   private enterBuildMode(): void {
     this.mode = 'build'
     this.restoreDetachedModules()
+    this.clearProjectiles()
     this.root.classList.remove('is-guide-open')
     this.shipBody = null
     this.lastFrame = null
@@ -477,6 +493,7 @@ export class Lab04App {
   private showStart(): void {
     this.mode = 'start'
     this.restoreDetachedModules()
+    this.clearProjectiles()
     this.root.classList.remove('is-guide-open')
     this.startScreen.classList.remove('is-hidden')
     this.root.classList.remove('is-running', 'is-testing', 'is-reporting')
@@ -510,6 +527,7 @@ export class Lab04App {
     this.hoverCube.visible = false
     this.reportPanel.classList.remove('is-visible')
     this.shipBody = new ShipRigidBody(simulationStats, simulationModules, structure.unstableModuleIds.length)
+    this.clearProjectiles()
     this.updateSelectionHelper(false)
     this.shipBody.reset()
     this.shipGroup.position.copy(this.shipBody.position)
@@ -525,6 +543,7 @@ export class Lab04App {
     if (this.mode !== 'test') return
     this.pressedKeys.clear()
     this.restoreDetachedModules()
+    this.clearProjectiles()
     const structure = this.blueprint.analyzeStructure()
     const allModules = this.blueprint.getModules()
     const stableIdSet = new Set(structure.stableModuleIds)
@@ -569,6 +588,7 @@ export class Lab04App {
 
   private clearBlueprint(): void {
     this.restoreDetachedModules()
+    this.clearProjectiles()
     this.launchWarningUntil = 0
     this.blueprint.clear()
     this.moduleMeshes.forEach((mesh) => this.shipGroup.remove(mesh))
@@ -674,6 +694,10 @@ export class Lab04App {
       this.pressedKeys.add(key)
       if (this.mode === 'test') event.preventDefault()
     }
+    if (key === 'f' && this.mode === 'test') {
+      event.preventDefault()
+      if (!event.repeat && this.active) this.fireCannons()
+    }
 
     if (event.key === 'Escape') {
       this.active = false
@@ -743,6 +767,7 @@ export class Lab04App {
     const intersections = this.raycaster.intersectObjects([...this.moduleMeshes.values()], true)
     for (const intersection of intersections) {
       if (!(intersection.object instanceof THREE.Mesh)) continue
+      if (intersection.object.userData.cannonDirectionMarker) continue
       const moduleHit = this.moduleHitFromObject(intersection.object)
       if (moduleHit) return { ...moduleHit, normal: this.worldNormal(intersection) }
     }
@@ -907,6 +932,85 @@ export class Lab04App {
         visual.mesh.position.y = -1.4
       }
     })
+  }
+
+  private fireCannons(): void {
+    if (this.mode !== 'test' || !this.shipBody) return
+    if (this.waveField.time - this.lastCannonFireTime < CANNON_COOLDOWN_SECONDS) return
+
+    const shipBody = this.shipBody
+    const cannons = this.blueprint.getModules().filter((module) => module.type === 'cannon')
+    let fired = 0
+
+    cannons.forEach((module) => {
+      const mesh = this.moduleMeshes.get(module.id)
+      if (!mesh || mesh.parent !== this.shipGroup) return
+
+      const muzzle = CANNON_MUZZLE_LOCAL.clone()
+      mesh.localToWorld(muzzle)
+      const direction = CANNON_FORWARD_LOCAL.clone()
+        .applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize()
+
+      const projectile = new THREE.Mesh(
+        new THREE.SphereGeometry(0.095, 18, 18),
+        new THREE.MeshStandardMaterial({
+          color: '#1a1714',
+          emissive: '#ff8a2a',
+          emissiveIntensity: 0.65,
+          metalness: 0.55,
+          roughness: 0.36,
+        }),
+      )
+      projectile.position.copy(muzzle).addScaledVector(direction, 0.14)
+      projectile.castShadow = true
+
+      const light = new THREE.PointLight('#ff9b3d', 1.5, 2.4)
+      light.position.copy(projectile.position)
+      this.scene.add(projectile, light)
+
+      const inheritedVelocity = shipBody.horizontalVelocity.clone()
+      this.projectiles.push({
+        mesh: projectile,
+        light,
+        velocity: direction.clone().multiplyScalar(CANNON_PROJECTILE_SPEED).add(inheritedVelocity),
+        age: 0,
+      })
+      shipBody.horizontalVelocity.addScaledVector(direction, -0.08)
+      fired += 1
+    })
+
+    if (fired > 0) this.lastCannonFireTime = this.waveField.time
+  }
+
+  private updateProjectiles(delta: number): void {
+    this.projectiles = this.projectiles.filter((projectile) => {
+      projectile.age += delta
+      projectile.velocity.y -= 2.7 * delta
+      projectile.mesh.position.addScaledVector(projectile.velocity, delta)
+      projectile.mesh.rotation.x += 8 * delta
+      projectile.mesh.rotation.z += 5 * delta
+      projectile.light.position.copy(projectile.mesh.position)
+      projectile.light.intensity = Math.max(0, 1.5 * (1 - projectile.age / CANNON_PROJECTILE_LIFE))
+
+      const alive = projectile.age < CANNON_PROJECTILE_LIFE && projectile.mesh.position.y > -2.8
+      if (!alive) {
+        this.scene.remove(projectile.mesh, projectile.light)
+        projectile.mesh.geometry.dispose()
+        ;(projectile.mesh.material as THREE.Material).dispose()
+      }
+      return alive
+    })
+  }
+
+  private clearProjectiles(): void {
+    this.projectiles.forEach((projectile) => {
+      this.scene.remove(projectile.mesh, projectile.light)
+      projectile.mesh.geometry.dispose()
+      ;(projectile.mesh.material as THREE.Material).dispose()
+    })
+    this.projectiles = []
+    this.lastCannonFireTime = -Infinity
   }
 
   private rotateSelectedModule(): boolean {
@@ -1101,6 +1205,7 @@ export class Lab04App {
 
     this.waveField.update(delta)
     if (this.waterMesh.visible) this.updateWaterGeometry()
+    this.updateProjectiles(delta)
 
     if (this.mode === 'test' && this.shipBody) {
       const shipControls = this.getShipControls()

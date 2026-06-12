@@ -11,6 +11,9 @@ const cannonBarrelGeo = new THREE.CylinderGeometry(0.12, 0.2, 1.02, 24)
 const cannonMuzzleGeo = new THREE.CylinderGeometry(0.19, 0.17, 0.14, 24)
 const cannonBoreGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.018, 18)
 const cannonBandGeo = new THREE.TorusGeometry(0.145, 0.018, 8, 24)
+const cannonSightGeo = new THREE.ConeGeometry(0.1, 0.28, 4)
+const cannonDirectionGeo = new THREE.ConeGeometry(0.12, 0.32, 18)
+const cannonDirectionLineGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.5, 12)
 const rudderShaftGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.96, 18)
 const rudderTillerGeo = new THREE.BoxGeometry(0.54, 0.07, 0.12)
 const rudderPinGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.34, 14)
@@ -20,6 +23,8 @@ const materialCache = new Map<string, THREE.MeshStandardMaterial>()
 const cannonWoodMaterial = new THREE.MeshStandardMaterial({ color: '#5a3821', roughness: 0.78, metalness: 0.05 })
 const cannonDarkMaterial = new THREE.MeshStandardMaterial({ color: '#15191d', roughness: 0.42, metalness: 0.72 })
 const cannonBoreMaterial = new THREE.MeshBasicMaterial({ color: '#050607' })
+const cannonSightMaterial = new THREE.MeshBasicMaterial({ color: '#ffdf5a' })
+const cannonDirectionMaterial = new THREE.MeshBasicMaterial({ color: '#ff6b2b', transparent: true, opacity: 0.88, depthWrite: false })
 
 function materialFor(def: ModuleDefinition): THREE.MeshStandardMaterial {
   const key = `${def.type}-${def.color}-${def.emissive ?? ''}`
@@ -164,6 +169,23 @@ export function createModuleMesh(module: PlacedModule): THREE.Group {
       band.position.set(x, 0.2, 0)
       group.add(band)
     })
+
+    const frontSight = new THREE.Mesh(cannonSightGeo, cannonSightMaterial)
+    frontSight.rotation.z = -Math.PI / 2
+    frontSight.position.set(0.6, 0.38, 0)
+    group.add(frontSight)
+
+    const directionLine = new THREE.Mesh(cannonDirectionLineGeo, cannonDirectionMaterial)
+    directionLine.rotation.z = Math.PI / 2
+    directionLine.position.set(0.96, 0.2, 0)
+    directionLine.userData.cannonDirectionMarker = true
+    group.add(directionLine)
+
+    const directionArrow = new THREE.Mesh(cannonDirectionGeo, cannonDirectionMaterial)
+    directionArrow.rotation.z = -Math.PI / 2
+    directionArrow.position.set(1.28, 0.2, 0)
+    directionArrow.userData.cannonDirectionMarker = true
+    group.add(directionArrow)
   }
 
   if (module.type === 'cargo') {
