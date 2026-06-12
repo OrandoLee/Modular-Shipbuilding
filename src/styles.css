@@ -95,6 +95,34 @@ button {
   transition: opacity 0.55s ease, visibility 0.55s ease;
 }
 
+.start-screen::before,
+.start-screen::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.start-screen::before {
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(115deg, transparent 0%, rgba(111, 187, 255, 0.16) 46%, transparent 58%),
+    linear-gradient(90deg, rgba(5, 6, 7, 0.96), transparent 48%);
+  transform: translateX(-112%);
+  animation: startSweep 1.35s cubic-bezier(0.19, 1, 0.22, 1) 2.2s forwards;
+}
+
+.start-screen::after {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  height: 24vh;
+  background: linear-gradient(0deg, rgba(10, 37, 62, 0.34), transparent);
+  opacity: 0;
+  animation: startAmbientRise 1.4s ease 2.75s forwards;
+}
+
 .start-screen.is-hidden {
   opacity: 0;
   visibility: hidden;
@@ -108,6 +136,9 @@ button {
   margin: 0;
   color: rgba(235, 242, 255, 0.62);
   font-size: clamp(13px, 1.1vw, 18px);
+  opacity: 0;
+  transform: translateY(-10px);
+  animation: startReveal 0.72s cubic-bezier(0.19, 1, 0.22, 1) 2.65s forwards;
 }
 
 .start-grid {
@@ -122,7 +153,8 @@ button {
     linear-gradient(90deg, rgba(100, 151, 194, 0.11) 1px, transparent 1px);
   background-size: 6vw 6vw;
   border: 1px solid rgba(126, 174, 230, 0.08);
-  opacity: 0.74;
+  opacity: 0;
+  animation: gridEnter 1.1s cubic-bezier(0.19, 1, 0.22, 1) 2.45s forwards;
 }
 
 .start-grid span {
@@ -153,6 +185,7 @@ button {
   left: 2.7vw;
   bottom: 12vh;
   width: min(62vw, 1120px);
+  z-index: 2;
 }
 
 .present {
@@ -161,6 +194,9 @@ button {
   font-size: clamp(13px, 1.1vw, 18px);
   font-weight: 800;
   letter-spacing: 0.2em;
+  opacity: 0;
+  transform: translateY(14px);
+  animation: startReveal 0.68s cubic-bezier(0.19, 1, 0.22, 1) 2.72s forwards;
 }
 
 .start-copy h1 {
@@ -171,6 +207,10 @@ button {
   letter-spacing: 0;
   color: #f5f7fb;
   text-transform: uppercase;
+  opacity: 0;
+  transform: translateY(26px);
+  clip-path: inset(0 0 100% 0);
+  animation: titleReveal 0.9s cubic-bezier(0.19, 1, 0.22, 1) 2.9s forwards;
 }
 
 .lab-outline {
@@ -180,6 +220,9 @@ button {
   font-size: clamp(52px, 7vw, 132px);
   font-weight: 900;
   line-height: 0.9;
+  opacity: 0;
+  transform: translateY(18px);
+  animation: startReveal 0.82s cubic-bezier(0.19, 1, 0.22, 1) 3.08s forwards;
 }
 
 .start-rule {
@@ -187,6 +230,9 @@ button {
   height: 1px;
   background: rgba(255, 255, 255, 0.16);
   margin-bottom: 24px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: ruleGrow 0.78s cubic-bezier(0.19, 1, 0.22, 1) 3.25s forwards;
 }
 
 .directive {
@@ -195,6 +241,9 @@ button {
   gap: 30px;
   margin-bottom: 26px;
   color: rgba(240, 247, 255, 0.72);
+  opacity: 0;
+  transform: translateY(16px);
+  animation: startReveal 0.72s cubic-bezier(0.19, 1, 0.22, 1) 3.38s forwards;
 }
 
 .directive strong {
@@ -213,11 +262,87 @@ button {
   background: rgba(255, 255, 255, 0.02);
   color: #eef5ff;
   cursor: pointer;
+  opacity: 0;
+  transform: translateY(18px);
+  animation: startReveal 0.64s cubic-bezier(0.19, 1, 0.22, 1) 3.52s forwards;
+}
+
+.start-button + .start-button {
+  animation-delay: 3.64s;
 }
 
 .start-button.primary {
   border-color: rgba(93, 159, 255, 0.78);
   background: linear-gradient(90deg, rgba(67, 129, 214, 0.22), rgba(19, 37, 57, 0.54));
+}
+
+@keyframes startSweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-112%);
+  }
+  18%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(112%);
+  }
+}
+
+@keyframes startAmbientRise {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes startReveal {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes titleReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(26px);
+    clip-path: inset(0 0 100% 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes ruleGrow {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes gridEnter {
+  0% {
+    opacity: 0;
+    transform: perspective(900px) rotateX(57deg) rotateZ(-7deg) translateY(42px);
+  }
+  100% {
+    opacity: 0.74;
+    transform: perspective(900px) rotateX(57deg) rotateZ(-7deg) translateY(0);
+  }
 }
 
 .start-guide {
@@ -725,5 +850,39 @@ button {
 
   .report-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-logo,
+  .intro-logo img,
+  .start-screen::before,
+  .start-screen::after,
+  .experiment-id,
+  .start-grid,
+  .present,
+  .start-copy h1,
+  .lab-outline,
+  .start-rule,
+  .directive,
+  .start-button {
+    animation-duration: 0.01ms;
+    animation-delay: 0s;
+  }
+
+  .experiment-id,
+  .start-grid,
+  .present,
+  .start-copy h1,
+  .lab-outline,
+  .directive,
+  .start-button {
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
+
+  .start-rule {
+    transform: scaleX(1);
   }
 }
