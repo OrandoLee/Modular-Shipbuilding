@@ -184,7 +184,8 @@ button {
   position: absolute;
   left: 2.7vw;
   bottom: 12vh;
-  width: min(62vw, 1120px);
+  width: min(94vw, 1680px);
+  max-width: calc(100vw - 5.4vw);
   z-index: 2;
 }
 
@@ -201,12 +202,14 @@ button {
 
 .start-copy h1 {
   margin: 0;
-  max-width: 1180px;
-  font-size: clamp(54px, 8vw, 158px);
-  line-height: 0.86;
+  max-width: min(100%, 1680px);
+  font-size: clamp(50px, 7vw, 136px);
+  line-height: 0.9;
   letter-spacing: 0;
   color: #f5f7fb;
   text-transform: uppercase;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
   opacity: 0;
   transform: translateY(26px);
   clip-path: inset(0 0 100% 0);
@@ -767,7 +770,7 @@ button {
 
 .is-embed .topbar h2,
 .is-embed .start-copy h1 {
-  font-size: clamp(42px, 7vw, 108px);
+  font-size: clamp(38px, 6.4vw, 104px);
 }
 
 .is-embed .module-palette {
@@ -787,7 +790,17 @@ button {
 @media (max-width: 900px) {
   .start-copy {
     width: 92vw;
+    max-width: 92vw;
     bottom: 8vh;
+  }
+
+  .start-copy h1 {
+    font-size: clamp(42px, 15vw, 92px);
+    line-height: 0.94;
+  }
+
+  .lab-outline {
+    font-size: clamp(42px, 14vw, 86px);
   }
 
   .start-guide {
