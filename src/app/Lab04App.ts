@@ -19,6 +19,15 @@ type PointerDownState = {
   dragged: boolean
 }
 
+type ModuleHit = {
+  id: string
+  gridPosition: GridPosition
+}
+
+type PointerTarget = ModuleHit & {
+  occupied: boolean
+}
+
 const DRAG_THRESHOLD_PX = 6
 
 const GRID = {
@@ -33,7 +42,7 @@ export class Lab04App {
   private readonly blueprint = new ShipBlueprint()
   private readonly raycaster = new THREE.Raycaster()
   private readonly pointer = new THREE.Vector2()
-  private readonly mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+  private readonly mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.5)
   private readonly waveField = new WaveField()
   private readonly clock = new THREE.Clock()
 
@@ -54,11 +63,14 @@ export class Lab04App {
   private gridGroup = new THREE.Group()
   private helperGroup = new THREE.Group()
   private hoverCube!: THREE.Mesh
+  private selectedOutline!: THREE.LineSegments
   private comMarker!: THREE.Mesh
   private cobMarker!: THREE.Mesh
   private buoyancyArrows: THREE.ArrowHelper[] = []
   private moduleMeshes = new Map<string, THREE.Object3D>()
   private selectedType: ModuleType = 'wood'
+  private selectedModuleId: string | null = null
+  private selectedCell: GridPosition | null = null
   private currentRotation = 0
   private hoveredCell: GridPosition | null = null
   private mode: AppMode = 'start'
@@ -303,6 +315,13 @@ export class Lab04App {
     this.hoverCube.visible = false
     this.scene.add(this.hoverCube)
 
+    this.selectedOutline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1.08, 1.08, 1.08)),
+      new THREE.LineBasicMaterial({ color: '#ffe36a', transparent: true, opacity: 0.95 }),
+    )
+    this.selectedOutline.visible = false
+    this.scene.add(this.selectedOutline)
+
     this.comMarker = new THREE.Mesh(
       new THREE.SphereGeometry(0.12, 18, 18),
       new THREE.MeshBasicMaterial({ color: '#ffdd66' }),
@@ -398,6 +417,7 @@ export class Lab04App {
     this.waterMesh.visible = false
     this.hoverCube.visible = true
     this.reportPanel.classList.remove('is-visible')
+    this.updateSelectionHelper()
     this.shipGroup.position.set(0, 0, 0)
     this.shipGroup.rotation.set(0, 0, 0)
     this.controls.target.set(0, 0.8, 0)
@@ -427,6 +447,7 @@ export class Lab04App {
     this.hoverCube.visible = false
     this.reportPanel.classList.remove('is-visible')
     this.shipBody = new ShipRigidBody(stats, this.blueprint.getModules())
+    this.updateSelectionHelper(false)
     this.shipBody.reset()
     this.shipGroup.position.copy(this.shipBody.position)
     this.shipGroup.rotation.copy(this.shipBody.rotation)
@@ -473,6 +494,7 @@ export class Lab04App {
     this.blueprint.clear()
     this.moduleMeshes.forEach((mesh) => this.shipGroup.remove(mesh))
     this.moduleMeshes.clear()
+    this.clearSelection()
     this.updateAllUi()
   }
 
@@ -491,10 +513,13 @@ export class Lab04App {
       return
     }
 
-    const cell = this.intersectGridCell()
-    this.hoveredCell = cell
-    this.hoverCube.visible = Boolean(cell)
-    if (cell) this.hoverCube.position.set(cell.x, cell.y + 0.5, cell.z)
+    const target = this.getPointerTarget()
+    this.hoveredCell = target?.gridPosition ?? null
+    this.hoverCube.visible = Boolean(target)
+    if (target) {
+      this.hoverCube.position.set(target.gridPosition.x, target.gridPosition.y + 0.5, target.gridPosition.z)
+      this.setHoverStyle(target.occupied)
+    }
   }
 
   private onPointerDown = (event: PointerEvent): void => {
@@ -522,31 +547,34 @@ export class Lab04App {
     const moved = Math.hypot(event.clientX - pointerState.startX, event.clientY - pointerState.startY)
     if (pointerState.dragged || moved > DRAG_THRESHOLD_PX) {
       this.updatePointer(event)
-      const cell = this.intersectGridCell()
-      this.hoveredCell = cell
-      this.hoverCube.visible = Boolean(cell)
-      if (cell) this.hoverCube.position.set(cell.x, cell.y + 0.5, cell.z)
+      const target = this.getPointerTarget()
+      this.hoveredCell = target?.gridPosition ?? null
+      this.hoverCube.visible = Boolean(target)
+      if (target) {
+        this.hoverCube.position.set(target.gridPosition.x, target.gridPosition.y + 0.5, target.gridPosition.z)
+        this.setHoverStyle(target.occupied)
+      }
       return
     }
 
     this.updatePointer(event)
-    const cell = this.intersectGridCell(pointerState.button === 2)
-    if (!cell) return
+    const target = this.getPointerTarget(pointerState.button === 2)
+    if (!target) return
 
     if (pointerState.button === 2) {
-      this.removeAt(cell)
+      this.removeAt(target.gridPosition)
       return
     }
 
-    const existing = this.blueprint.getAt(cell)
-    if (existing) {
-      this.removeAt(cell)
+    if (target.occupied) {
+      this.selectModule(target)
       return
     }
 
-    const module = this.blueprint.addModule(this.selectedType, cell, this.currentRotation)
+    const module = this.blueprint.addModule(this.selectedType, target.gridPosition, this.currentRotation)
     if (!module) return
     this.addModuleToScene(module)
+    this.selectModule({ id: module.id, gridPosition: module.gridPosition, occupied: true })
     this.updateAllUi()
   }
 
@@ -565,7 +593,13 @@ export class Lab04App {
       this.currentRotation = (this.currentRotation + Math.PI / 2) % (Math.PI * 2)
       if (this.mode === 'test') this.resetTest()
     }
-    if (event.key === 'Delete' && this.hoveredCell) this.removeAt(this.hoveredCell)
+    if (event.key === 'Delete') {
+      if (this.selectedCell) {
+        this.removeAt(this.selectedCell)
+        return
+      }
+      if (this.hoveredCell) this.removeAt(this.hoveredCell)
+    }
   }
 
   private updatePointer(event: PointerEvent): void {
@@ -574,14 +608,26 @@ export class Lab04App {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
   }
 
-  private intersectGridCell(preferOccupied = false): GridPosition | null {
+  private getPointerTarget(preferOccupied = false): PointerTarget | null {
     this.raycaster.setFromCamera(this.pointer, this.camera)
 
-    const modulePosition = this.intersectModulePosition()
-    if (modulePosition) {
-      return preferOccupied ? modulePosition : this.nextFreeCell(modulePosition.x, modulePosition.z)
+    const moduleHit = this.intersectModule()
+    if (moduleHit) {
+      return { ...moduleHit, occupied: true }
     }
 
+    const cell = this.intersectGridCell(preferOccupied)
+    if (!cell) return null
+
+    const module = this.blueprint.getAt(cell)
+    return {
+      id: module?.id ?? '',
+      gridPosition: cell,
+      occupied: Boolean(module),
+    }
+  }
+
+  private intersectGridCell(preferOccupied = false): GridPosition | null {
     const point = new THREE.Vector3()
     if (!this.raycaster.ray.intersectPlane(this.mousePlane, point)) return null
 
@@ -592,21 +638,22 @@ export class Lab04App {
     return preferOccupied ? this.topOccupiedCell(x, z) : this.nextFreeCell(x, z)
   }
 
-  private intersectModulePosition(): GridPosition | null {
+  private intersectModule(): ModuleHit | null {
     const intersections = this.raycaster.intersectObjects([...this.moduleMeshes.values()], true)
     for (const intersection of intersections) {
       if (!(intersection.object instanceof THREE.Mesh)) continue
-      const position = this.gridPositionFromObject(intersection.object)
-      if (position) return position
+      const moduleHit = this.moduleHitFromObject(intersection.object)
+      if (moduleHit) return moduleHit
     }
     return null
   }
 
-  private gridPositionFromObject(object: THREE.Object3D): GridPosition | null {
+  private moduleHitFromObject(object: THREE.Object3D): ModuleHit | null {
     let current: THREE.Object3D | null = object
     while (current) {
       const position = current.userData.gridPosition as GridPosition | undefined
-      if (position) return { ...position }
+      const id = current.userData.moduleId as string | undefined
+      if (position && id) return { id, gridPosition: { ...position } }
       current = current.parent
     }
     return null
@@ -648,7 +695,40 @@ export class Lab04App {
     const mesh = this.moduleMeshes.get(removed.id)
     if (mesh) this.shipGroup.remove(mesh)
     this.moduleMeshes.delete(removed.id)
+    if (this.selectedModuleId === removed.id) this.clearSelection()
     this.updateAllUi()
+  }
+
+  private selectModule(target: PointerTarget): void {
+    const module = this.blueprint.getAt(target.gridPosition)
+    if (!module) return
+    this.selectedModuleId = target.id
+    this.selectedCell = { ...target.gridPosition }
+    this.selectedType = module.type
+    this.updateSelectionHelper()
+    this.updateAllUi()
+  }
+
+  private clearSelection(): void {
+    this.selectedModuleId = null
+    this.selectedCell = null
+    this.updateSelectionHelper(false)
+  }
+
+  private updateSelectionHelper(visible = this.mode === 'build'): void {
+    if (!visible || !this.selectedCell || !this.selectedModuleId || !this.moduleMeshes.has(this.selectedModuleId)) {
+      this.selectedOutline.visible = false
+      return
+    }
+
+    this.selectedOutline.visible = true
+    this.selectedOutline.position.set(this.selectedCell.x, this.selectedCell.y + 0.5, this.selectedCell.z)
+  }
+
+  private setHoverStyle(occupied: boolean): void {
+    const material = this.hoverCube.material as THREE.MeshBasicMaterial
+    material.color.set(occupied ? '#ffe36a' : '#8ee8ff')
+    material.opacity = occupied ? 0.18 : 0.22
   }
 
   private updateAllUi(): void {
