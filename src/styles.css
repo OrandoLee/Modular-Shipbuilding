@@ -340,6 +340,7 @@ button {
 
 .topbar,
 .module-palette,
+.range-panel,
 .hud,
 .sea-switch,
 .dock-actions,
@@ -412,6 +413,36 @@ button {
   display: grid;
   grid-template-columns: repeat(4, minmax(132px, 1fr));
   gap: 8px;
+}
+
+.range-panel {
+  left: 18px;
+  top: 96px;
+  width: min(300px, calc(100vw - 36px));
+  border: 1px solid rgba(149, 190, 230, 0.18);
+  background: rgba(5, 10, 16, 0.72);
+  padding: 16px;
+  backdrop-filter: blur(20px);
+}
+
+.range-panel label {
+  display: grid;
+  grid-template-columns: 44px 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  color: rgba(232, 243, 255, 0.74);
+  font-size: 12px;
+}
+
+.range-panel strong {
+  color: #f8fbff;
+  text-align: right;
+}
+
+.range-panel input {
+  width: 100%;
+  accent-color: #74d5ff;
 }
 
 .module-card {
@@ -523,6 +554,10 @@ button {
 }
 
 .lab-root.is-testing .module-palette {
+  display: none;
+}
+
+.lab-root.is-testing .range-panel {
   display: none;
 }
 
@@ -669,6 +704,12 @@ button {
     grid-template-columns: repeat(2, minmax(130px, 1fr));
     max-height: 32vh;
     overflow: auto;
+  }
+
+  .range-panel {
+    top: auto;
+    left: 18px;
+    bottom: 36vh;
   }
 
   .hud {

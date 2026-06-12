@@ -33,11 +33,16 @@ type PointerTarget = {
 
 const DRAG_THRESHOLD_PX = 6
 
-const GRID = {
-  width: 3,
-  height: 3,
-  length: 5,
-  block: 1,
+type BuildArea = {
+  width: number
+  height: number
+  length: number
+}
+
+const DEFAULT_BUILD_AREA: BuildArea = {
+  width: 5,
+  height: 4,
+  length: 7,
 }
 
 export class Lab04App {
@@ -57,6 +62,7 @@ export class Lab04App {
   private startScreen!: HTMLDivElement
   private hud!: HTMLDivElement
   private palette!: HTMLDivElement
+  private rangePanel!: HTMLDivElement
   private reportPanel!: HTMLDivElement
   private activation!: HTMLButtonElement
   private launchButton!: HTMLButtonElement
@@ -74,6 +80,7 @@ export class Lab04App {
   private selectedType: ModuleType = 'wood'
   private selectedModuleId: string | null = null
   private selectedCell: GridPosition | null = null
+  private buildArea: BuildArea = { ...DEFAULT_BUILD_AREA }
   private currentRotation = 0
   private hoveredCell: GridPosition | null = null
   private mode: AppMode = 'start'
@@ -95,6 +102,7 @@ export class Lab04App {
     this.startScreen = this.root.querySelector('.start-screen')!
     this.hud = this.root.querySelector('.hud')!
     this.palette = this.root.querySelector('.module-palette')!
+    this.rangePanel = this.root.querySelector('.range-panel')!
     this.reportPanel = this.root.querySelector('.report-panel')!
     this.activation = this.root.querySelector('.activation-overlay')!
     this.launchButton = this.root.querySelector('[data-action="launch"]')!
@@ -171,6 +179,7 @@ export class Lab04App {
           </header>
 
           <aside class="module-palette" aria-label="模块栏"></aside>
+          <aside class="range-panel" aria-label="建造范围"></aside>
           <aside class="hud" aria-live="polite"></aside>
 
           <div class="sea-switch" aria-label="海况选择">
@@ -243,8 +252,16 @@ export class Lab04App {
   }
 
   private createDock(): void {
+    this.gridGroup.clear()
+    const minX = this.minBuildX()
+    const maxX = this.maxBuildX()
+    const minZ = this.minBuildZ()
+    const maxZ = this.maxBuildZ()
+    const width = this.buildArea.width
+    const length = this.buildArea.length
+
     const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(8.2, 0.12, 10.5),
+      new THREE.BoxGeometry(width + 5.2, 0.12, length + 5.5),
       new THREE.MeshStandardMaterial({
         color: '#071018',
         metalness: 0.24,
@@ -255,24 +272,29 @@ export class Lab04App {
     floor.receiveShadow = true
     this.gridGroup.add(floor)
 
-    const grid = new THREE.GridHelper(10, 20, '#3ba7ff', '#16314a')
-    grid.position.y = 0.006
-    ;(grid.material as THREE.Material).transparent = true
-    ;(grid.material as THREE.Material).opacity = 0.46
-    this.gridGroup.add(grid)
-
     const lineMaterial = new THREE.LineBasicMaterial({ color: '#73d7ff', transparent: true, opacity: 0.55 })
-    for (let x = -1.5; x <= 1.5; x += 1) {
-      const points = [new THREE.Vector3(x, 0.035, -2.5), new THREE.Vector3(x, 0.035, 2.5)]
+    const guideMaterial = new THREE.LineBasicMaterial({ color: '#1f4c74', transparent: true, opacity: 0.42 })
+    for (let x = minX - 0.5; x <= maxX + 0.5; x += 1) {
+      const points = [new THREE.Vector3(x, 0.04, minZ - 0.5), new THREE.Vector3(x, 0.04, maxZ + 0.5)]
       this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial))
     }
-    for (let z = -2.5; z <= 2.5; z += 1) {
-      const points = [new THREE.Vector3(-1.5, 0.04, z), new THREE.Vector3(1.5, 0.04, z)]
+    for (let z = minZ - 0.5; z <= maxZ + 0.5; z += 1) {
+      const points = [new THREE.Vector3(minX - 0.5, 0.045, z), new THREE.Vector3(maxX + 0.5, 0.045, z)]
       this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial))
+    }
+    for (let x = -Math.ceil((width + 4) / 2); x <= Math.ceil((width + 4) / 2); x += 1) {
+      if (x >= minX - 0.5 && x <= maxX + 0.5) continue
+      const points = [new THREE.Vector3(x, 0.025, -length / 2 - 2), new THREE.Vector3(x, 0.025, length / 2 + 2)]
+      this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), guideMaterial))
+    }
+    for (let z = -Math.ceil((length + 4) / 2); z <= Math.ceil((length + 4) / 2); z += 1) {
+      if (z >= minZ - 0.5 && z <= maxZ + 0.5) continue
+      const points = [new THREE.Vector3(-width / 2 - 2, 0.03, z), new THREE.Vector3(width / 2 + 2, 0.03, z)]
+      this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), guideMaterial))
     }
 
     const pad = new THREE.Mesh(
-      new THREE.BoxGeometry(3.3, 0.05, 5.3),
+      new THREE.BoxGeometry(width + 0.3, 0.05, length + 0.3),
       new THREE.MeshStandardMaterial({ color: '#0b2538', emissive: '#00284a', emissiveIntensity: 0.18, transparent: true, opacity: 0.42 }),
     )
     pad.position.y = 0.02
@@ -368,6 +390,12 @@ export class Lab04App {
       this.root.querySelectorAll('[data-sea]').forEach((button) => button.classList.toggle('is-active', button === seaButton))
     })
 
+    this.root.addEventListener('input', (event) => {
+      const rangeInput = (event.target as HTMLElement).closest<HTMLInputElement>('[data-range]')
+      if (!rangeInput) return
+      this.setBuildArea(rangeInput.dataset.range as keyof BuildArea, Number(rangeInput.value))
+    })
+
     this.activation.addEventListener('click', () => {
       this.active = true
       this.activation.classList.add('is-hidden')
@@ -425,6 +453,7 @@ export class Lab04App {
     this.hoverCube.visible = true
     this.reportPanel.classList.remove('is-visible')
     this.updateSelectionHelper()
+    this.updateRudderVisuals(1, 0)
     this.shipGroup.position.set(0, 0, 0)
     this.shipGroup.rotation.set(0, 0, 0)
     this.controls.target.set(0, 0.8, 0)
@@ -466,7 +495,9 @@ export class Lab04App {
 
   private resetTest(): void {
     if (this.mode !== 'test') return
+    this.pressedKeys.clear()
     this.shipBody?.reset()
+    this.updateRudderVisuals(1, 0)
     this.lastFrame = null
   }
 
@@ -655,7 +686,7 @@ export class Lab04App {
 
     const x = Math.round(point.x)
     const z = Math.round(point.z)
-    if (x < -1 || x > 1 || z < -2 || z > 2) return null
+    if (x < this.minBuildX() || x > this.maxBuildX() || z < this.minBuildZ() || z > this.maxBuildZ()) return null
 
     return preferOccupied ? this.topOccupiedCell(x, z) : this.nextFreeCell(x, z)
   }
@@ -692,18 +723,18 @@ export class Lab04App {
 
   private nextFreeCell(x: number, z: number): GridPosition | null {
     let y = 0
-    for (let candidate = GRID.height - 1; candidate >= 0; candidate -= 1) {
+    for (let candidate = this.buildArea.height - 1; candidate >= 0; candidate -= 1) {
       if (this.blueprint.getAt({ x, y: candidate, z })) {
-        y = Math.min(GRID.height - 1, candidate + 1)
+        y = Math.min(this.buildArea.height - 1, candidate + 1)
         break
       }
     }
-    if (y >= GRID.height) return null
+    if (y >= this.buildArea.height) return null
     return { x, y, z }
   }
 
   private topOccupiedCell(x: number, z: number): GridPosition | null {
-    for (let y = GRID.height - 1; y >= 0; y -= 1) {
+    for (let y = this.buildArea.height - 1; y >= 0; y -= 1) {
       if (this.blueprint.getAt({ x, y, z })) return { x, y, z }
     }
     return null
@@ -762,10 +793,66 @@ export class Lab04App {
     material.opacity = occupied ? 0.18 : 0.22
   }
 
+  private setBuildArea(axis: keyof BuildArea, value: number): void {
+    const next = { ...this.buildArea, [axis]: value }
+    if (axis === 'width' || axis === 'length') next[axis] = this.toOddSize(value)
+    next.width = THREE.MathUtils.clamp(next.width, 3, 9)
+    next.length = THREE.MathUtils.clamp(next.length, 5, 11)
+    next.height = THREE.MathUtils.clamp(next.height, 3, 6)
+    this.buildArea = next
+    this.createDock()
+    this.updateRangePanel()
+    this.hoveredCell = null
+    this.hoverCube.visible = false
+  }
+
+  private toOddSize(value: number): number {
+    const rounded = Math.round(value)
+    return rounded % 2 === 0 ? rounded + 1 : rounded
+  }
+
+  private minBuildX(): number {
+    return -Math.floor(this.buildArea.width / 2)
+  }
+
+  private maxBuildX(): number {
+    return Math.floor(this.buildArea.width / 2)
+  }
+
+  private minBuildZ(): number {
+    return -Math.floor(this.buildArea.length / 2)
+  }
+
+  private maxBuildZ(): number {
+    return Math.floor(this.buildArea.length / 2)
+  }
+
   private updateAllUi(): void {
     this.updatePalette()
+    this.updateRangePanel()
     this.updateHud()
     this.updateMarkers()
+  }
+
+  private updateRangePanel(): void {
+    this.rangePanel.innerHTML = `
+      <div class="panel-heading">
+        <p>BUILD AREA</p>
+        <h3>${this.buildArea.width} x ${this.buildArea.length} x ${this.buildArea.height}</h3>
+      </div>
+      <label>
+        <span>宽度</span><strong>${this.buildArea.width}</strong>
+        <input data-range="width" type="range" min="3" max="9" step="2" value="${this.buildArea.width}" />
+      </label>
+      <label>
+        <span>长度</span><strong>${this.buildArea.length}</strong>
+        <input data-range="length" type="range" min="5" max="11" step="2" value="${this.buildArea.length}" />
+      </label>
+      <label>
+        <span>高度</span><strong>${this.buildArea.height}</strong>
+        <input data-range="height" type="range" min="3" max="6" step="1" value="${this.buildArea.height}" />
+      </label>
+    `
   }
 
   private updatePalette(): void {
@@ -853,10 +940,12 @@ export class Lab04App {
     if (this.waterMesh.visible) this.updateWaterGeometry()
 
     if (this.mode === 'test' && this.shipBody) {
-      this.lastFrame = this.shipBody.update(delta, this.waveField, this.getShipControls())
+      const shipControls = this.getShipControls()
+      this.lastFrame = this.shipBody.update(delta, this.waveField, shipControls)
       this.shipGroup.position.copy(this.shipBody.position)
       this.shipGroup.rotation.copy(this.shipBody.rotation)
       this.controls.target.lerp(new THREE.Vector3(this.shipGroup.position.x, this.shipGroup.position.y + 0.45, this.shipGroup.position.z), 0.045)
+      this.updateRudderVisuals(delta, shipControls.turn)
       this.updateMarkers()
       this.updateBuoyancyHelpers()
       if (Math.floor(this.waveField.time * 6) % 3 === 0) this.updateHud()
@@ -884,10 +973,21 @@ export class Lab04App {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   }
 
+  private updateRudderVisuals(delta: number, turn: number): void {
+    const target = THREE.MathUtils.clamp(turn, -1, 1) * 0.58
+    const blend = 1 - Math.pow(0.035, delta)
+    this.moduleMeshes.forEach((mesh) => {
+      mesh.traverse((object) => {
+        if (!object.userData.rudderPivot) return
+        object.rotation.y = THREE.MathUtils.lerp(object.rotation.y, target, blend)
+      })
+    })
+  }
+
   private getShipControls(): ShipControls {
     return {
       throttle: (this.pressedKeys.has('w') ? 1 : 0) + (this.pressedKeys.has('s') ? -1 : 0),
-      turn: (this.pressedKeys.has('a') ? -1 : 0) + (this.pressedKeys.has('d') ? 1 : 0),
+      turn: (this.pressedKeys.has('a') ? 1 : 0) + (this.pressedKeys.has('d') ? -1 : 0),
     }
   }
 

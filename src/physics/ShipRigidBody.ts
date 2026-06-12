@@ -28,10 +28,13 @@ export class ShipRigidBody {
   rotation = new THREE.Euler(0, 0, 0, 'YXZ')
   velocity = new THREE.Vector3()
   horizontalVelocity = new THREE.Vector3()
+  angularVelocity = 0
+  rudderDeflection = 0
   maxRoll = 0
   maxPitch = 0
   capsized = false
   sunk = false
+  private steeringLoad = 0
 
   constructor(
     private readonly stats: BlueprintStats,
@@ -43,6 +46,9 @@ export class ShipRigidBody {
     this.rotation.set(0, 0, 0)
     this.velocity.set(0, 0, 0)
     this.horizontalVelocity.set(0, 0, 0)
+    this.angularVelocity = 0
+    this.rudderDeflection = 0
+    this.steeringLoad = 0
     this.maxRoll = 0
     this.maxPitch = 0
     this.capsized = false
@@ -65,7 +71,7 @@ export class ShipRigidBody {
     const pitchWave = waveField.heightAt(this.position.x, this.position.z + 1.8) - waveField.heightAt(this.position.x, this.position.z - 1.8)
     const highCenter = Math.max(0, this.stats.topWeightRatio - 0.22)
     const targetRoll = THREE.MathUtils.clamp(
-      this.stats.leftRightMassImbalance * 0.86 + waveKick * (0.58 + highCenter * 2.6),
+      this.stats.leftRightMassImbalance * 0.86 + waveKick * (0.58 + highCenter * 2.6) - this.steeringLoad * 0.26,
       -1.42,
       1.42,
     )
@@ -108,9 +114,15 @@ export class ShipRigidBody {
     const speed = this.horizontalVelocity.length()
     if (speed > maxSpeed) this.horizontalVelocity.setLength(maxSpeed)
 
+    this.rudderDeflection = THREE.MathUtils.lerp(this.rudderDeflection, turn, 1 - Math.pow(0.055, delta))
     const steerAuthority = 0.38 + Math.min(1.4, rudderPower * 0.72)
     const speedAssist = 0.35 + Math.min(0.75, this.horizontalVelocity.length() / Math.max(maxSpeed, 0.001))
-    this.rotation.y += turn * steerAuthority * speedAssist * delta
+    const steerAcceleration = this.rudderDeflection * steerAuthority * speedAssist
+    this.angularVelocity += steerAcceleration * delta
+    this.angularVelocity *= Math.pow(0.32, delta)
+    this.steeringLoad = this.rudderDeflection * speedAssist
+    this.horizontalVelocity.multiplyScalar(1 - Math.min(0.18, Math.abs(this.steeringLoad) * 0.05))
+    this.rotation.y += this.angularVelocity * delta
     this.position.addScaledVector(this.horizontalVelocity, delta)
   }
 

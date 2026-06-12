@@ -3,8 +3,11 @@ import type { ModuleDefinition, PlacedModule } from './ModuleDefinition'
 import { MODULE_DEFINITIONS } from './ModuleTypes'
 
 const sharedBox = new THREE.BoxGeometry(0.92, 0.92, 0.92)
-const rudderGeo = new THREE.BoxGeometry(0.24, 0.8, 0.9)
+const rudderShaftGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.96, 18)
+const rudderTillerGeo = new THREE.BoxGeometry(0.54, 0.07, 0.12)
+const rudderPinGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.34, 14)
 const cannonBarrelGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.92, 16)
+const rudderBladeGeo = createRudderBladeGeometry()
 
 const materialCache = new Map<string, THREE.MeshStandardMaterial>()
 
@@ -22,6 +25,26 @@ function materialFor(def: ModuleDefinition): THREE.MeshStandardMaterial {
   })
   materialCache.set(key, material)
   return material
+}
+
+function createRudderBladeGeometry(): THREE.ExtrudeGeometry {
+  const shape = new THREE.Shape()
+  shape.moveTo(-0.22, 0.38)
+  shape.lineTo(0.2, 0.3)
+  shape.lineTo(0.28, -0.28)
+  shape.quadraticCurveTo(0.04, -0.48, -0.18, -0.36)
+  shape.lineTo(-0.26, 0.2)
+  shape.quadraticCurveTo(-0.26, 0.34, -0.22, 0.38)
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.1,
+    bevelEnabled: true,
+    bevelSize: 0.015,
+    bevelThickness: 0.012,
+    bevelSegments: 2,
+  })
+  geometry.translate(0, 0, -0.05)
+  return geometry
 }
 
 export function createModuleMesh(module: PlacedModule): THREE.Group {
@@ -51,10 +74,34 @@ export function createModuleMesh(module: PlacedModule): THREE.Group {
   }
 
   if (module.type === 'rudder') {
-    const fin = new THREE.Mesh(rudderGeo, materialFor(def))
-    fin.position.set(0, -0.08, 0.5)
-    fin.castShadow = true
-    group.add(fin)
+    const rudderPivot = new THREE.Group()
+    rudderPivot.name = 'rudder-pivot'
+    rudderPivot.userData.rudderPivot = true
+    rudderPivot.position.set(0, -0.03, 0.5)
+
+    const shaft = new THREE.Mesh(rudderShaftGeo, materialFor(def))
+    shaft.castShadow = true
+    shaft.receiveShadow = true
+    rudderPivot.add(shaft)
+
+    const blade = new THREE.Mesh(rudderBladeGeo, materialFor(def))
+    blade.position.set(0, -0.08, 0.12)
+    blade.castShadow = true
+    blade.receiveShadow = true
+    rudderPivot.add(blade)
+
+    const tiller = new THREE.Mesh(rudderTillerGeo, materialFor(def))
+    tiller.position.set(0, 0.43, -0.08)
+    tiller.castShadow = true
+    rudderPivot.add(tiller)
+
+    const lowerPin = new THREE.Mesh(rudderPinGeo, materialFor(def))
+    lowerPin.rotation.z = Math.PI / 2
+    lowerPin.position.set(0, -0.28, -0.04)
+    lowerPin.castShadow = true
+    rudderPivot.add(lowerPin)
+
+    group.add(rudderPivot)
   }
 
   if (module.type === 'cannon') {
