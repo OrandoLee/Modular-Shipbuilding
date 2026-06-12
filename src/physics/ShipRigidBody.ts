@@ -34,12 +34,15 @@ export class ShipRigidBody {
   maxPitch = 0
   capsized = false
   sunk = false
+  private readonly forwardLocal: THREE.Vector3
   private steeringLoad = 0
 
   constructor(
     private readonly stats: BlueprintStats,
     private readonly modules: PlacedModule[],
-  ) {}
+  ) {
+    this.forwardLocal = this.computeForwardLocal()
+  }
 
   reset(): void {
     this.position.set(0, this.restingWaterOffset(), 0)
@@ -100,7 +103,7 @@ export class ShipRigidBody {
   }
 
   private updatePlanarMotion(delta: number, controls: ShipControls, waterSeverity: number): void {
-    const forward = new THREE.Vector3(-Math.sin(this.rotation.y), 0, -Math.cos(this.rotation.y))
+    const forward = this.forwardLocal.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation.y)
     const throttle = THREE.MathUtils.clamp(controls.throttle, -1, 1)
     const turn = THREE.MathUtils.clamp(controls.turn, -1, 1)
     const enginePower = Math.max(2.2, this.stats.enginePower)
@@ -130,6 +133,28 @@ export class ShipRigidBody {
     const balance = THREE.MathUtils.clamp(this.stats.buoyancyMargin / Math.max(this.stats.totalMass, 1), -0.65, 0.65)
     const submergedDepth = THREE.MathUtils.clamp(0.18 + this.stats.estimatedDraft * 0.32 - balance * 0.24, 0.08, 0.76)
     return -submergedDepth
+  }
+
+  private computeForwardLocal(): THREE.Vector3 {
+    const rudders = this.modules.filter((module) => module.type === 'rudder')
+    if (rudders.length === 0) return new THREE.Vector3(0, 0, -1)
+
+    const center = new THREE.Vector3()
+    this.modules.forEach((module) => {
+      center.x += module.gridPosition.x
+      center.z += module.gridPosition.z
+    })
+    center.divideScalar(Math.max(1, this.modules.length))
+
+    const stern = new THREE.Vector3()
+    rudders.forEach((module) => {
+      stern.x += module.gridPosition.x - center.x
+      stern.z += module.gridPosition.z - center.z
+    })
+    stern.divideScalar(rudders.length)
+    if (stern.lengthSq() < 0.0001) return new THREE.Vector3(0, 0, -1)
+
+    return stern.normalize().multiplyScalar(-1)
   }
 
   getSamplePoints(): THREE.Vector3[] {

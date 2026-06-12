@@ -831,7 +831,7 @@ export class Lab04App {
     next.height = THREE.MathUtils.clamp(next.height, 3, 6)
     this.buildArea = next
     this.createDock()
-    this.updateRangePanel()
+    this.updateRangeValues()
     this.hoveredCell = null
     this.hoverCube.visible = false
   }
@@ -871,18 +871,27 @@ export class Lab04App {
         <h3>${this.buildArea.width} x ${this.buildArea.length} x ${this.buildArea.height}</h3>
       </div>
       <label>
-        <span>宽度</span><strong>${this.buildArea.width}</strong>
+        <span>宽度</span><strong data-range-value="width">${this.buildArea.width}</strong>
         <input data-range="width" type="range" min="3" max="9" step="2" value="${this.buildArea.width}" />
       </label>
       <label>
-        <span>长度</span><strong>${this.buildArea.length}</strong>
+        <span>长度</span><strong data-range-value="length">${this.buildArea.length}</strong>
         <input data-range="length" type="range" min="5" max="11" step="2" value="${this.buildArea.length}" />
       </label>
       <label>
-        <span>高度</span><strong>${this.buildArea.height}</strong>
+        <span>高度</span><strong data-range-value="height">${this.buildArea.height}</strong>
         <input data-range="height" type="range" min="3" max="6" step="1" value="${this.buildArea.height}" />
       </label>
     `
+  }
+
+  private updateRangeValues(): void {
+    const heading = this.rangePanel.querySelector('.panel-heading h3')
+    if (heading) heading.textContent = `${this.buildArea.width} x ${this.buildArea.length} x ${this.buildArea.height}`
+    ;(['width', 'length', 'height'] as const).forEach((axis) => {
+      const value = this.rangePanel.querySelector<HTMLElement>(`[data-range-value="${axis}"]`)
+      if (value) value.textContent = String(this.buildArea[axis])
+    })
   }
 
   private updatePalette(): void {
