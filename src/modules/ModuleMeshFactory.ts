@@ -173,18 +173,21 @@ export function createModuleMesh(module: PlacedModule): THREE.Group {
     const frontSight = new THREE.Mesh(cannonSightGeo, cannonSightMaterial)
     frontSight.rotation.z = -Math.PI / 2
     frontSight.position.set(0.6, 0.38, 0)
+    frontSight.userData.hideInTestMode = true
     group.add(frontSight)
 
     const directionLine = new THREE.Mesh(cannonDirectionLineGeo, cannonDirectionMaterial)
     directionLine.rotation.z = Math.PI / 2
     directionLine.position.set(0.96, 0.2, 0)
     directionLine.userData.cannonDirectionMarker = true
+    directionLine.userData.hideInTestMode = true
     group.add(directionLine)
 
     const directionArrow = new THREE.Mesh(cannonDirectionGeo, cannonDirectionMaterial)
     directionArrow.rotation.z = -Math.PI / 2
     directionArrow.position.set(1.28, 0.2, 0)
     directionArrow.userData.cannonDirectionMarker = true
+    directionArrow.userData.hideInTestMode = true
     group.add(directionArrow)
   }
 

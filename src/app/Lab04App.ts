@@ -975,7 +975,7 @@ export class Lab04App {
     this.helperGroup.visible = !testing
     this.moduleMeshes.forEach((mesh) => {
       mesh.traverse((object) => {
-        if (object.userData.cannonDirectionMarker) object.visible = !testing
+        if (object.userData.hideInTestMode || object.userData.cannonDirectionMarker) object.visible = !testing
       })
     })
   }
