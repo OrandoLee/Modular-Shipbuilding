@@ -277,6 +277,8 @@ button {
 .start-guide strong,
 .start-guide span {
   display: block;
+  grid-column: 2;
+  min-width: 0;
 }
 
 .start-guide strong {
@@ -288,6 +290,7 @@ button {
 .start-guide span {
   font-size: 14px;
   line-height: 1.6;
+  overflow-wrap: break-word;
 }
 
 .guide-actions {
