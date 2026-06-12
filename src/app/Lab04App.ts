@@ -49,7 +49,7 @@ type CannonProjectile = {
   mesh: THREE.Mesh
   velocity: THREE.Vector3
   age: number
-  light: THREE.PointLight
+  light: THREE.PointLight | null
 }
 
 const DEFAULT_BUILD_AREA: BuildArea = {
@@ -63,6 +63,16 @@ const CANNON_FORWARD_LOCAL = new THREE.Vector3(1, 0, 0)
 const CANNON_COOLDOWN_SECONDS = 0.45
 const CANNON_PROJECTILE_SPEED = 8.6
 const CANNON_PROJECTILE_LIFE = 3.2
+const CANNON_PROJECTILE_POOL_SIZE = 192
+const CANNON_PROJECTILE_LIGHT_POOL_SIZE = 12
+const CANNON_PROJECTILE_GEOMETRY = new THREE.SphereGeometry(0.095, 12, 12)
+const CANNON_PROJECTILE_MATERIAL = new THREE.MeshStandardMaterial({
+  color: '#1a1714',
+  emissive: '#ff8a2a',
+  emissiveIntensity: 0.65,
+  metalness: 0.55,
+  roughness: 0.36,
+})
 
 export class Lab04App {
   private readonly embed = new URLSearchParams(window.location.search).get('embed') === '1'
@@ -111,8 +121,14 @@ export class Lab04App {
   private pressedKeys = new Set<string>()
   private detachedVisuals = new Map<string, DetachedModuleVisual>()
   private projectiles: CannonProjectile[] = []
+  private projectilePool: CannonProjectile[] = []
+  private projectileLightPool: THREE.PointLight[] = []
   private lastCannonFireTime = -Infinity
   private animationHandle = 0
+  private readonly cannonMuzzleScratch = new THREE.Vector3()
+  private readonly cannonDirectionScratch = new THREE.Vector3()
+  private readonly cannonQuaternionScratch = new THREE.Quaternion()
+  private readonly controlsTargetScratch = new THREE.Vector3()
 
   constructor(private readonly root: HTMLDivElement) {}
 
@@ -263,9 +279,11 @@ export class Lab04App {
     this.createDock()
     this.createWater()
     this.createHelpers()
+    this.createProjectilePool()
 
     this.scene.add(this.gridGroup, this.shipGroup, this.helperGroup)
     this.waterMesh.visible = false
+    this.prewarmProjectileMaterial()
 
     window.addEventListener('resize', this.onResize)
     document.addEventListener('visibilitychange', () => {
@@ -384,6 +402,44 @@ export class Lab04App {
       new THREE.MeshBasicMaterial({ color: '#79e8ff' }),
     )
     this.helperGroup.add(this.comMarker, this.cobMarker)
+  }
+
+  private createProjectilePool(): void {
+    for (let i = 0; i < CANNON_PROJECTILE_POOL_SIZE; i += 1) {
+      this.projectilePool.push(this.createProjectile())
+    }
+
+    for (let i = 0; i < CANNON_PROJECTILE_LIGHT_POOL_SIZE; i += 1) {
+      const light = new THREE.PointLight('#ff9b3d', 0, 2.4)
+      light.visible = false
+      this.projectileLightPool.push(light)
+    }
+  }
+
+  private createProjectile(): CannonProjectile {
+    const mesh = new THREE.Mesh(CANNON_PROJECTILE_GEOMETRY, CANNON_PROJECTILE_MATERIAL)
+    mesh.visible = false
+    mesh.castShadow = false
+    mesh.frustumCulled = true
+
+    return {
+      mesh,
+      light: null,
+      velocity: new THREE.Vector3(),
+      age: 0,
+    }
+  }
+
+  private prewarmProjectileMaterial(): void {
+    const projectile = this.projectilePool[this.projectilePool.length - 1]
+    if (!projectile) return
+
+    projectile.mesh.visible = true
+    projectile.mesh.position.set(0, -1000, 0)
+    this.scene.add(projectile.mesh)
+    this.renderer.compile(this.scene, this.camera)
+    this.scene.remove(projectile.mesh)
+    projectile.mesh.visible = false
   }
 
   private bindUi(): void {
@@ -946,36 +1002,29 @@ export class Lab04App {
       const mesh = this.moduleMeshes.get(module.id)
       if (!mesh || mesh.parent !== this.shipGroup) return
 
-      const muzzle = CANNON_MUZZLE_LOCAL.clone()
+      const muzzle = this.cannonMuzzleScratch.copy(CANNON_MUZZLE_LOCAL)
       mesh.localToWorld(muzzle)
-      const direction = CANNON_FORWARD_LOCAL.clone()
-        .applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()))
+      const direction = this.cannonDirectionScratch
+        .copy(CANNON_FORWARD_LOCAL)
+        .applyQuaternion(mesh.getWorldQuaternion(this.cannonQuaternionScratch))
         .normalize()
 
-      const projectile = new THREE.Mesh(
-        new THREE.SphereGeometry(0.095, 18, 18),
-        new THREE.MeshStandardMaterial({
-          color: '#1a1714',
-          emissive: '#ff8a2a',
-          emissiveIntensity: 0.65,
-          metalness: 0.55,
-          roughness: 0.36,
-        }),
-      )
-      projectile.position.copy(muzzle).addScaledVector(direction, 0.14)
-      projectile.castShadow = true
+      const projectile = this.acquireProjectile()
+      projectile.mesh.position.copy(muzzle).addScaledVector(direction, 0.14)
+      projectile.mesh.rotation.set(0, 0, 0)
+      projectile.velocity.copy(direction).multiplyScalar(CANNON_PROJECTILE_SPEED).add(shipBody.horizontalVelocity)
+      projectile.age = 0
 
-      const light = new THREE.PointLight('#ff9b3d', 1.5, 2.4)
-      light.position.copy(projectile.position)
-      this.scene.add(projectile, light)
+      projectile.light = this.acquireProjectileLight()
+      if (projectile.light) {
+        projectile.light.position.copy(projectile.mesh.position)
+        projectile.light.intensity = 1.5
+        projectile.light.visible = true
+        this.scene.add(projectile.light)
+      }
 
-      const inheritedVelocity = shipBody.horizontalVelocity.clone()
-      this.projectiles.push({
-        mesh: projectile,
-        light,
-        velocity: direction.clone().multiplyScalar(CANNON_PROJECTILE_SPEED).add(inheritedVelocity),
-        age: 0,
-      })
+      this.scene.add(projectile.mesh)
+      this.projectiles.push(projectile)
       shipBody.horizontalVelocity.addScaledVector(direction, -0.08)
       fired += 1
     })
@@ -984,33 +1033,79 @@ export class Lab04App {
   }
 
   private updateProjectiles(delta: number): void {
-    this.projectiles = this.projectiles.filter((projectile) => {
+    for (let i = this.projectiles.length - 1; i >= 0; i -= 1) {
+      const projectile = this.projectiles[i]
       projectile.age += delta
       projectile.velocity.y -= 2.7 * delta
       projectile.mesh.position.addScaledVector(projectile.velocity, delta)
       projectile.mesh.rotation.x += 8 * delta
       projectile.mesh.rotation.z += 5 * delta
-      projectile.light.position.copy(projectile.mesh.position)
-      projectile.light.intensity = Math.max(0, 1.5 * (1 - projectile.age / CANNON_PROJECTILE_LIFE))
+      if (projectile.light) {
+        projectile.light.position.copy(projectile.mesh.position)
+        projectile.light.intensity = Math.max(0, 1.5 * (1 - projectile.age / CANNON_PROJECTILE_LIFE))
+      }
 
       const alive = projectile.age < CANNON_PROJECTILE_LIFE && projectile.mesh.position.y > -2.8
-      if (!alive) {
-        this.scene.remove(projectile.mesh, projectile.light)
-        projectile.mesh.geometry.dispose()
-        ;(projectile.mesh.material as THREE.Material).dispose()
-      }
-      return alive
-    })
+      if (!alive) this.releaseActiveProjectile(i)
+    }
   }
 
   private clearProjectiles(): void {
-    this.projectiles.forEach((projectile) => {
-      this.scene.remove(projectile.mesh, projectile.light)
-      projectile.mesh.geometry.dispose()
-      ;(projectile.mesh.material as THREE.Material).dispose()
-    })
-    this.projectiles = []
+    for (let i = this.projectiles.length - 1; i >= 0; i -= 1) {
+      this.releaseActiveProjectile(i)
+    }
     this.lastCannonFireTime = -Infinity
+  }
+
+  private acquireProjectile(): CannonProjectile {
+    const projectile = this.projectilePool.pop() ?? this.recycleOldestProjectile() ?? this.createProjectile()
+    projectile.mesh.visible = true
+    projectile.light = null
+    return projectile
+  }
+
+  private acquireProjectileLight(): THREE.PointLight | null {
+    return this.projectileLightPool.pop() ?? null
+  }
+
+  private recycleOldestProjectile(): CannonProjectile | null {
+    if (this.projectiles.length === 0) return null
+
+    const projectile = this.projectiles[0]
+    const last = this.projectiles.pop()
+    if (!last) return null
+    if (last !== projectile) this.projectiles[0] = last
+    this.releaseProjectileLight(projectile)
+    this.scene.remove(projectile.mesh)
+    projectile.mesh.visible = false
+    return projectile
+  }
+
+  private releaseActiveProjectile(index: number): void {
+    const projectile = this.projectiles[index]
+    const last = this.projectiles.pop()
+    if (!projectile || !last) return
+    if (last !== projectile) this.projectiles[index] = last
+    this.releaseProjectile(projectile)
+  }
+
+  private releaseProjectile(projectile: CannonProjectile): void {
+    this.releaseProjectileLight(projectile)
+    this.scene.remove(projectile.mesh)
+    projectile.mesh.visible = false
+    projectile.age = 0
+    projectile.velocity.set(0, 0, 0)
+    this.projectilePool.push(projectile)
+  }
+
+  private releaseProjectileLight(projectile: CannonProjectile): void {
+    if (!projectile.light) return
+
+    this.scene.remove(projectile.light)
+    projectile.light.intensity = 0
+    projectile.light.visible = false
+    this.projectileLightPool.push(projectile.light)
+    projectile.light = null
   }
 
   private rotateSelectedModule(): boolean {
@@ -1213,7 +1308,8 @@ export class Lab04App {
       this.shipGroup.position.copy(this.shipBody.position)
       this.shipGroup.rotation.copy(this.shipBody.rotation)
       this.updateDetachedModules(delta)
-      this.controls.target.lerp(new THREE.Vector3(this.shipGroup.position.x, this.shipGroup.position.y + 0.45, this.shipGroup.position.z), 0.045)
+      this.controlsTargetScratch.set(this.shipGroup.position.x, this.shipGroup.position.y + 0.45, this.shipGroup.position.z)
+      this.controls.target.lerp(this.controlsTargetScratch, 0.045)
       this.updateRudderVisuals(delta, shipControls.turn)
       this.updateMarkers()
       if (Math.floor(this.waveField.time * 6) % 3 === 0) this.updateHud()
