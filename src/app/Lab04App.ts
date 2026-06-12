@@ -75,7 +75,6 @@ export class Lab04App {
   private selectedOutline!: THREE.LineSegments
   private comMarker!: THREE.Mesh
   private cobMarker!: THREE.Mesh
-  private buoyancyArrows: THREE.ArrowHelper[] = []
   private moduleMeshes = new Map<string, THREE.Object3D>()
   private selectedType: ModuleType = 'wood'
   private selectedModuleId: string | null = null
@@ -272,33 +271,38 @@ export class Lab04App {
     floor.receiveShadow = true
     this.gridGroup.add(floor)
 
-    const lineMaterial = new THREE.LineBasicMaterial({ color: '#73d7ff', transparent: true, opacity: 0.55 })
-    const guideMaterial = new THREE.LineBasicMaterial({ color: '#1f4c74', transparent: true, opacity: 0.42 })
-    for (let x = minX - 0.5; x <= maxX + 0.5; x += 1) {
-      const points = [new THREE.Vector3(x, 0.04, minZ - 0.5), new THREE.Vector3(x, 0.04, maxZ + 0.5)]
-      this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial))
-    }
-    for (let z = minZ - 0.5; z <= maxZ + 0.5; z += 1) {
-      const points = [new THREE.Vector3(minX - 0.5, 0.045, z), new THREE.Vector3(maxX + 0.5, 0.045, z)]
-      this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial))
-    }
-    for (let x = -Math.ceil((width + 4) / 2); x <= Math.ceil((width + 4) / 2); x += 1) {
-      if (x >= minX - 0.5 && x <= maxX + 0.5) continue
-      const points = [new THREE.Vector3(x, 0.025, -length / 2 - 2), new THREE.Vector3(x, 0.025, length / 2 + 2)]
-      this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), guideMaterial))
-    }
-    for (let z = -Math.ceil((length + 4) / 2); z <= Math.ceil((length + 4) / 2); z += 1) {
-      if (z >= minZ - 0.5 && z <= maxZ + 0.5) continue
-      const points = [new THREE.Vector3(-width / 2 - 2, 0.03, z), new THREE.Vector3(width / 2 + 2, 0.03, z)]
-      this.gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), guideMaterial))
-    }
-
     const pad = new THREE.Mesh(
       new THREE.BoxGeometry(width + 0.3, 0.05, length + 0.3),
       new THREE.MeshStandardMaterial({ color: '#0b2538', emissive: '#00284a', emissiveIntensity: 0.18, transparent: true, opacity: 0.42 }),
     )
     pad.position.y = 0.02
     this.gridGroup.add(pad)
+
+    const grid = new THREE.LineSegments(
+      this.createBuildGridGeometry(minX, maxX, minZ, maxZ),
+      new THREE.LineBasicMaterial({ color: '#73d7ff', transparent: true, opacity: 0.72 }),
+    )
+    grid.position.y = 0.075
+    this.gridGroup.add(grid)
+  }
+
+  private createBuildGridGeometry(minX: number, maxX: number, minZ: number, maxZ: number): THREE.BufferGeometry {
+    const points: THREE.Vector3[] = []
+    for (let x = minX; x <= maxX; x += 1) {
+      for (let z = minZ; z <= maxZ; z += 1) {
+        const left = x - 0.5
+        const right = x + 0.5
+        const front = z - 0.5
+        const back = z + 0.5
+        points.push(
+          new THREE.Vector3(left, 0, front), new THREE.Vector3(right, 0, front),
+          new THREE.Vector3(right, 0, front), new THREE.Vector3(right, 0, back),
+          new THREE.Vector3(right, 0, back), new THREE.Vector3(left, 0, back),
+          new THREE.Vector3(left, 0, back), new THREE.Vector3(left, 0, front),
+        )
+      }
+    }
+    return new THREE.BufferGeometry().setFromPoints(points)
   }
 
   private createWater(): void {
@@ -597,6 +601,13 @@ export class Lab04App {
     }
 
     this.updatePointer(event)
+    this.raycaster.setFromCamera(this.pointer, this.camera)
+    const directModuleHit = this.intersectModule()
+    if (pointerState.button === 0 && directModuleHit && this.blueprint.getAt(directModuleHit.gridPosition)?.type === 'rudder') {
+      this.selectModule({ id: directModuleHit.id, gridPosition: directModuleHit.gridPosition, occupied: true })
+      return
+    }
+
     const target = this.getPointerTarget(pointerState.button === 2)
     if (!target) return
 
@@ -635,7 +646,8 @@ export class Lab04App {
     if (!this.active) return
     if (key === 'c') this.clearBlueprint()
     if (key === 'r') {
-      this.currentRotation = (this.currentRotation + Math.PI / 2) % (Math.PI * 2)
+      if (this.rotateSelectedModule()) return
+      this.currentRotation = this.nextQuarterTurn(this.currentRotation)
       if (this.mode === 'test') this.resetTest()
     }
     if (event.key === 'Delete') {
@@ -761,6 +773,24 @@ export class Lab04App {
     this.updateAllUi()
   }
 
+  private rotateSelectedModule(): boolean {
+    if (this.mode !== 'build' || !this.selectedCell || !this.selectedModuleId) return false
+
+    const module = this.blueprint.getAt(this.selectedCell)
+    if (!module || module.id !== this.selectedModuleId) return false
+
+    module.rotation = this.nextQuarterTurn(module.rotation)
+    this.currentRotation = module.rotation
+    const mesh = this.moduleMeshes.get(module.id)
+    if (mesh) mesh.rotation.y = module.rotation
+    this.updateSelectionHelper()
+    return true
+  }
+
+  private nextQuarterTurn(rotation: number): number {
+    return (rotation + Math.PI / 2) % (Math.PI * 2)
+  }
+
   private selectModule(target: PointerTarget): void {
     const module = this.blueprint.getAt(target.gridPosition)
     if (!module) return
@@ -837,7 +867,7 @@ export class Lab04App {
   private updateRangePanel(): void {
     this.rangePanel.innerHTML = `
       <div class="panel-heading">
-        <p>BUILD AREA</p>
+        <p>建造范围</p>
         <h3>${this.buildArea.width} x ${this.buildArea.length} x ${this.buildArea.height}</h3>
       </div>
       <label>
@@ -864,7 +894,7 @@ export class Lab04App {
           <span class="swatch" style="background:${def.color}"></span>
           <strong>${def.name}</strong>
           <small>${def.description}</small>
-          <em>Mass ${def.mass.toFixed(1)} / Buoyancy ${def.buoyancy.toFixed(1)}</em>
+          <em>质量 ${def.mass.toFixed(1)} / 浮力 ${def.buoyancy.toFixed(1)}</em>
           <i>${def.tags.join(' · ')}</i>
         </button>
       `
@@ -877,21 +907,21 @@ export class Lab04App {
     const frame = this.lastFrame
     this.hud.innerHTML = `
       <div class="panel-heading">
-        <p>${this.mode === 'test' ? `测试海况 / ${SEA_STATE_LABELS[this.waveField.seaState]}` : '建造统计 / Blueprint'}</p>
+        <p>${this.mode === 'test' ? `测试海况 / ${SEA_STATE_LABELS[this.waveField.seaState]}` : '建造统计 / 蓝图'}</p>
         <h3>${this.mode === 'test' ? frame?.status ?? '下水中' : summary.status}</h3>
       </div>
       <dl>
-        <div><dt>Blocks</dt><dd>${stats.blocks}</dd></div>
-        <div><dt>Total Mass</dt><dd>${stats.totalMass.toFixed(1)}</dd></div>
-        <div><dt>Total Buoyancy</dt><dd>${stats.totalBuoyancy.toFixed(1)}</dd></div>
-        <div><dt>Buoyancy Margin</dt><dd>${stats.buoyancyMargin.toFixed(1)}</dd></div>
-        <div><dt>Draft</dt><dd>${stats.estimatedDraft.toFixed(2)}</dd></div>
-        <div><dt>Roll Angle</dt><dd>${(frame?.roll ?? 0).toFixed(1)}°</dd></div>
-        <div><dt>Pitch Angle</dt><dd>${(frame?.pitch ?? 0).toFixed(1)}°</dd></div>
-        <div><dt>Max Roll</dt><dd>${(frame?.maxRoll ?? 0).toFixed(1)}°</dd></div>
-        <div><dt>Max Pitch</dt><dd>${(frame?.maxPitch ?? 0).toFixed(1)}°</dd></div>
-        <div><dt>Top Weight Ratio</dt><dd>${(stats.topWeightRatio * 100).toFixed(0)}%</dd></div>
-        <div><dt>Stability Score</dt><dd>${summary.score}</dd></div>
+        <div><dt>模块数量</dt><dd>${stats.blocks}</dd></div>
+        <div><dt>总质量</dt><dd>${stats.totalMass.toFixed(1)}</dd></div>
+        <div><dt>总浮力</dt><dd>${stats.totalBuoyancy.toFixed(1)}</dd></div>
+        <div><dt>浮力余量</dt><dd>${stats.buoyancyMargin.toFixed(1)}</dd></div>
+        <div><dt>吃水深度</dt><dd>${stats.estimatedDraft.toFixed(2)}</dd></div>
+        <div><dt>横摇角</dt><dd>${(frame?.roll ?? 0).toFixed(1)}°</dd></div>
+        <div><dt>纵摇角</dt><dd>${(frame?.pitch ?? 0).toFixed(1)}°</dd></div>
+        <div><dt>最大横摇</dt><dd>${(frame?.maxRoll ?? 0).toFixed(1)}°</dd></div>
+        <div><dt>最大纵摇</dt><dd>${(frame?.maxPitch ?? 0).toFixed(1)}°</dd></div>
+        <div><dt>上层重量</dt><dd>${(stats.topWeightRatio * 100).toFixed(0)}%</dd></div>
+        <div><dt>稳定评分</dt><dd>${summary.score}</dd></div>
       </dl>
       <div class="warnings">
         ${summary.warnings.slice(0, 3).map((warning) => `<span>${warning}</span>`).join('') || '<span>当前设计可以进入下水测试。</span>'}
@@ -918,19 +948,6 @@ export class Lab04App {
     this.waterMesh.geometry.computeVertexNormals()
   }
 
-  private updateBuoyancyHelpers(): void {
-    this.buoyancyArrows.forEach((arrow) => this.helperGroup.remove(arrow))
-    this.buoyancyArrows = []
-    if (!this.shipBody || this.mode !== 'test') return
-
-    this.shipBody.getSamplePoints().slice(0, 24).forEach((point, index) => {
-      if (index % 2 !== 0) return
-      const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), point, 0.58, '#79e8ff', 0.18, 0.1)
-      this.helperGroup.add(arrow)
-      this.buoyancyArrows.push(arrow)
-    })
-  }
-
   private animate = (): void => {
     this.animationHandle = window.requestAnimationFrame(this.animate)
     const delta = Math.min(this.clock.getDelta(), 0.05)
@@ -947,7 +964,6 @@ export class Lab04App {
       this.controls.target.lerp(new THREE.Vector3(this.shipGroup.position.x, this.shipGroup.position.y + 0.45, this.shipGroup.position.z), 0.045)
       this.updateRudderVisuals(delta, shipControls.turn)
       this.updateMarkers()
-      this.updateBuoyancyHelpers()
       if (Math.floor(this.waveField.time * 6) % 3 === 0) this.updateHud()
     }
 

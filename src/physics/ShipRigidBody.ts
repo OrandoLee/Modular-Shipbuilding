@@ -100,7 +100,7 @@ export class ShipRigidBody {
   }
 
   private updatePlanarMotion(delta: number, controls: ShipControls, waterSeverity: number): void {
-    const forward = new THREE.Vector3(Math.sin(this.rotation.y), 0, Math.cos(this.rotation.y))
+    const forward = new THREE.Vector3(-Math.sin(this.rotation.y), 0, -Math.cos(this.rotation.y))
     const throttle = THREE.MathUtils.clamp(controls.throttle, -1, 1)
     const turn = THREE.MathUtils.clamp(controls.turn, -1, 1)
     const enginePower = Math.max(2.2, this.stats.enginePower)
