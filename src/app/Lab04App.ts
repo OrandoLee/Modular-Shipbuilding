@@ -22,9 +22,12 @@ type PointerDownState = {
 type ModuleHit = {
   id: string
   gridPosition: GridPosition
+  normalY: number
 }
 
-type PointerTarget = ModuleHit & {
+type PointerTarget = {
+  id: string
+  gridPosition: GridPosition
   occupied: boolean
 }
 
@@ -42,7 +45,7 @@ export class Lab04App {
   private readonly blueprint = new ShipBlueprint()
   private readonly raycaster = new THREE.Raycaster()
   private readonly pointer = new THREE.Vector2()
-  private readonly mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.5)
+  private readonly buildPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private readonly waveField = new WaveField()
   private readonly clock = new THREE.Clock()
 
@@ -613,6 +616,10 @@ export class Lab04App {
 
     const moduleHit = this.intersectModule()
     if (moduleHit) {
+      const stackCell = this.nextFreeCell(moduleHit.gridPosition.x, moduleHit.gridPosition.z)
+      if (!preferOccupied && stackCell && stackCell.y > moduleHit.gridPosition.y && moduleHit.normalY > 0.55) {
+        return { id: '', gridPosition: stackCell, occupied: false }
+      }
       return { ...moduleHit, occupied: true }
     }
 
@@ -629,7 +636,7 @@ export class Lab04App {
 
   private intersectGridCell(preferOccupied = false): GridPosition | null {
     const point = new THREE.Vector3()
-    if (!this.raycaster.ray.intersectPlane(this.mousePlane, point)) return null
+    if (!this.raycaster.ray.intersectPlane(this.buildPlane, point)) return null
 
     const x = Math.round(point.x)
     const z = Math.round(point.z)
@@ -643,12 +650,12 @@ export class Lab04App {
     for (const intersection of intersections) {
       if (!(intersection.object instanceof THREE.Mesh)) continue
       const moduleHit = this.moduleHitFromObject(intersection.object)
-      if (moduleHit) return moduleHit
+      if (moduleHit) return { ...moduleHit, normalY: this.worldNormalY(intersection) }
     }
     return null
   }
 
-  private moduleHitFromObject(object: THREE.Object3D): ModuleHit | null {
+  private moduleHitFromObject(object: THREE.Object3D): Omit<ModuleHit, 'normalY'> | null {
     let current: THREE.Object3D | null = object
     while (current) {
       const position = current.userData.gridPosition as GridPosition | undefined
@@ -657,6 +664,15 @@ export class Lab04App {
       current = current.parent
     }
     return null
+  }
+
+  private worldNormalY(intersection: THREE.Intersection): number {
+    if (!intersection.face) return 0
+    return intersection.face.normal
+      .clone()
+      .applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersection.object.matrixWorld))
+      .normalize()
+      .y
   }
 
   private nextFreeCell(x: number, z: number): GridPosition | null {
