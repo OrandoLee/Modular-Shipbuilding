@@ -6,7 +6,7 @@ import type { GridPosition, ModuleType, PlacedModule } from '../modules/ModuleDe
 import { createModuleMesh } from '../modules/ModuleMeshFactory'
 import { analyzeStats } from '../physics/StabilityAnalyzer'
 import { SEA_STATE_LABELS, SeaState, WaveField } from '../physics/WaveField'
-import { RuntimeFrame, ShipRigidBody } from '../physics/ShipRigidBody'
+import { RuntimeFrame, ShipControls, ShipRigidBody } from '../physics/ShipRigidBody'
 import { generateReport } from '../diagnostics/ReportGenerator'
 
 type AppMode = 'start' | 'build' | 'test' | 'report'
@@ -82,6 +82,7 @@ export class Lab04App {
   private shipBody: ShipRigidBody | null = null
   private lastFrame: RuntimeFrame | null = null
   private pointerDownState: PointerDownState | null = null
+  private pressedKeys = new Set<string>()
   private animationHandle = 0
 
   constructor(private readonly root: HTMLDivElement) {}
@@ -378,7 +379,9 @@ export class Lab04App {
     window.addEventListener('pointerup', this.onPointerUp)
     window.addEventListener('pointercancel', this.onPointerCancel)
     this.renderer?.domElement.addEventListener('contextmenu', (event) => event.preventDefault())
-    this.rootEl.addEventListener('keydown', this.onKeyDown)
+    window.addEventListener('keydown', this.onKeyDown)
+    window.addEventListener('keyup', this.onKeyUp)
+    window.addEventListener('blur', () => this.pressedKeys.clear())
 
     window.addEventListener('message', (event) => {
       const type = event.data?.type
@@ -413,6 +416,7 @@ export class Lab04App {
     this.root.classList.remove('is-guide-open')
     this.shipBody = null
     this.lastFrame = null
+    this.pressedKeys.clear()
     this.startScreen.classList.add('is-hidden')
     this.root.classList.add('is-running')
     this.root.classList.remove('is-testing', 'is-reporting')
@@ -456,6 +460,7 @@ export class Lab04App {
     this.shipGroup.rotation.copy(this.shipBody.rotation)
     this.controls.target.set(0, 0.2, 0)
     this.camera.position.set(6.5, 3.9, 7.8)
+    this.rootEl.focus()
     this.updateAllUi()
   }
 
@@ -586,13 +591,19 @@ export class Lab04App {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    const key = event.key.toLowerCase()
+    if (this.isShipControlKey(key)) {
+      this.pressedKeys.add(key)
+      if (this.mode === 'test') event.preventDefault()
+    }
+
     if (event.key === 'Escape') {
       this.active = false
       this.activation.classList.remove('is-hidden')
     }
     if (!this.active) return
-    if (event.key.toLowerCase() === 'c') this.clearBlueprint()
-    if (event.key.toLowerCase() === 'r') {
+    if (key === 'c') this.clearBlueprint()
+    if (key === 'r') {
       this.currentRotation = (this.currentRotation + Math.PI / 2) % (Math.PI * 2)
       if (this.mode === 'test') this.resetTest()
     }
@@ -603,6 +614,10 @@ export class Lab04App {
       }
       if (this.hoveredCell) this.removeAt(this.hoveredCell)
     }
+  }
+
+  private onKeyUp = (event: KeyboardEvent): void => {
+    this.pressedKeys.delete(event.key.toLowerCase())
   }
 
   private updatePointer(event: PointerEvent): void {
@@ -838,10 +853,10 @@ export class Lab04App {
     if (this.waterMesh.visible) this.updateWaterGeometry()
 
     if (this.mode === 'test' && this.shipBody) {
-      this.lastFrame = this.shipBody.update(delta, this.waveField)
+      this.lastFrame = this.shipBody.update(delta, this.waveField, this.getShipControls())
       this.shipGroup.position.copy(this.shipBody.position)
       this.shipGroup.rotation.copy(this.shipBody.rotation)
-      this.controls.target.lerp(new THREE.Vector3(this.shipGroup.position.x, 0.2, this.shipGroup.position.z), 0.045)
+      this.controls.target.lerp(new THREE.Vector3(this.shipGroup.position.x, this.shipGroup.position.y + 0.45, this.shipGroup.position.z), 0.045)
       this.updateMarkers()
       this.updateBuoyancyHelpers()
       if (Math.floor(this.waveField.time * 6) % 3 === 0) this.updateHud()
@@ -867,5 +882,16 @@ export class Lab04App {
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(this.canvasWrap.clientWidth, this.canvasWrap.clientHeight)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  }
+
+  private getShipControls(): ShipControls {
+    return {
+      throttle: (this.pressedKeys.has('w') ? 1 : 0) + (this.pressedKeys.has('s') ? -1 : 0),
+      turn: (this.pressedKeys.has('a') ? -1 : 0) + (this.pressedKeys.has('d') ? 1 : 0),
+    }
+  }
+
+  private isShipControlKey(key: string): boolean {
+    return key === 'w' || key === 'a' || key === 's' || key === 'd'
   }
 }

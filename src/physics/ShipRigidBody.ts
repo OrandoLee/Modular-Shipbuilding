@@ -13,10 +13,21 @@ export type RuntimeFrame = {
   status: string
 }
 
+export type ShipControls = {
+  throttle: number
+  turn: number
+}
+
+const IDLE_CONTROLS: ShipControls = {
+  throttle: 0,
+  turn: 0,
+}
+
 export class ShipRigidBody {
-  position = new THREE.Vector3(0, 1.6, 0)
+  position = new THREE.Vector3()
   rotation = new THREE.Euler(0, 0, 0, 'YXZ')
   velocity = new THREE.Vector3()
+  horizontalVelocity = new THREE.Vector3()
   maxRoll = 0
   maxPitch = 0
   capsized = false
@@ -28,23 +39,26 @@ export class ShipRigidBody {
   ) {}
 
   reset(): void {
-    this.position.set(0, 1.6, 0)
+    this.position.set(0, this.restingWaterOffset(), 0)
     this.rotation.set(0, 0, 0)
     this.velocity.set(0, 0, 0)
+    this.horizontalVelocity.set(0, 0, 0)
     this.maxRoll = 0
     this.maxPitch = 0
     this.capsized = false
     this.sunk = false
   }
 
-  update(delta: number, waveField: WaveField): RuntimeFrame {
+  update(delta: number, waveField: WaveField, controls: ShipControls = IDLE_CONTROLS): RuntimeFrame {
+    this.updatePlanarMotion(delta, controls, waveField.severity())
+
     const water = waveField.heightAt(this.position.x, this.position.z)
-    const draftTarget = -this.stats.estimatedDraft * 0.5 + Math.min(0.55, this.stats.buoyancyMargin * 0.045)
-    const floatError = water + draftTarget - this.position.y
-    const buoyantAcceleration = floatError * 5.8 + this.stats.buoyancyMargin * 0.22
+    const floatTarget = water + this.restingWaterOffset()
+    const floatError = floatTarget - this.position.y
+    const buoyantAcceleration = floatError * 8.4 + this.stats.buoyancyMargin * 0.18
     const gravityPenalty = this.stats.buoyancyMargin < 0 ? this.stats.buoyancyMargin * 0.55 : 0
     this.velocity.y += (buoyantAcceleration + gravityPenalty) * delta
-    this.velocity.y *= Math.pow(0.42, delta)
+    this.velocity.y *= Math.pow(0.24, delta)
     this.position.y += this.velocity.y * delta
 
     const waveKick = waveField.heightAt(this.position.x + 1.2, this.position.z) - waveField.heightAt(this.position.x - 1.2, this.position.z)
@@ -63,7 +77,6 @@ export class ShipRigidBody {
 
     this.rotation.z = THREE.MathUtils.lerp(this.rotation.z, targetRoll, 1 - Math.pow(0.035, delta))
     this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, targetPitch, 1 - Math.pow(0.05, delta))
-    this.position.z += this.stats.enginePower * 0.015 * delta
 
     this.maxRoll = Math.max(this.maxRoll, Math.abs(THREE.MathUtils.radToDeg(this.rotation.z)))
     this.maxPitch = Math.max(this.maxPitch, Math.abs(THREE.MathUtils.radToDeg(this.rotation.x)))
@@ -78,6 +91,33 @@ export class ShipRigidBody {
       maxPitch: this.maxPitch,
       status: this.getStatus(),
     }
+  }
+
+  private updatePlanarMotion(delta: number, controls: ShipControls, waterSeverity: number): void {
+    const forward = new THREE.Vector3(Math.sin(this.rotation.y), 0, Math.cos(this.rotation.y))
+    const throttle = THREE.MathUtils.clamp(controls.throttle, -1, 1)
+    const turn = THREE.MathUtils.clamp(controls.turn, -1, 1)
+    const enginePower = Math.max(2.2, this.stats.enginePower)
+    const rudderPower = Math.max(0.35, this.stats.rudderPower)
+    const acceleration = (0.85 + enginePower * 0.2) * throttle
+
+    this.horizontalVelocity.addScaledVector(forward, acceleration * delta)
+    this.horizontalVelocity.multiplyScalar(Math.pow(0.58 - Math.min(0.18, waterSeverity * 0.04), delta))
+
+    const maxSpeed = 0.9 + enginePower * 0.12
+    const speed = this.horizontalVelocity.length()
+    if (speed > maxSpeed) this.horizontalVelocity.setLength(maxSpeed)
+
+    const steerAuthority = 0.38 + Math.min(1.4, rudderPower * 0.72)
+    const speedAssist = 0.35 + Math.min(0.75, this.horizontalVelocity.length() / Math.max(maxSpeed, 0.001))
+    this.rotation.y += turn * steerAuthority * speedAssist * delta
+    this.position.addScaledVector(this.horizontalVelocity, delta)
+  }
+
+  private restingWaterOffset(): number {
+    const balance = THREE.MathUtils.clamp(this.stats.buoyancyMargin / Math.max(this.stats.totalMass, 1), -0.65, 0.65)
+    const submergedDepth = THREE.MathUtils.clamp(0.18 + this.stats.estimatedDraft * 0.32 - balance * 0.24, 0.08, 0.76)
+    return -submergedDepth
   }
 
   getSamplePoints(): THREE.Vector3[] {
