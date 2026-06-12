@@ -11,6 +11,16 @@ import { generateReport } from '../diagnostics/ReportGenerator'
 
 type AppMode = 'start' | 'build' | 'test' | 'report'
 
+type PointerDownState = {
+  pointerId: number
+  button: number
+  startX: number
+  startY: number
+  dragged: boolean
+}
+
+const DRAG_THRESHOLD_PX = 6
+
 const GRID = {
   width: 3,
   height: 3,
@@ -56,6 +66,7 @@ export class Lab04App {
   private paused = false
   private shipBody: ShipRigidBody | null = null
   private lastFrame: RuntimeFrame | null = null
+  private pointerDownState: PointerDownState | null = null
   private animationHandle = 0
 
   constructor(private readonly root: HTMLDivElement) {}
@@ -342,6 +353,8 @@ export class Lab04App {
 
     this.renderer?.domElement.addEventListener('pointermove', this.onPointerMove)
     this.renderer?.domElement.addEventListener('pointerdown', this.onPointerDown)
+    window.addEventListener('pointerup', this.onPointerUp)
+    window.addEventListener('pointercancel', this.onPointerCancel)
     this.renderer?.domElement.addEventListener('contextmenu', (event) => event.preventDefault())
     this.rootEl.addEventListener('keydown', this.onKeyDown)
 
@@ -465,7 +478,19 @@ export class Lab04App {
 
   private onPointerMove = (event: PointerEvent): void => {
     if (this.mode !== 'build') return
+
+    if (this.pointerDownState?.pointerId === event.pointerId) {
+      const moved = Math.hypot(event.clientX - this.pointerDownState.startX, event.clientY - this.pointerDownState.startY)
+      if (moved > DRAG_THRESHOLD_PX) this.pointerDownState.dragged = true
+    }
+
     this.updatePointer(event)
+    if (this.pointerDownState?.dragged) {
+      this.hoveredCell = null
+      this.hoverCube.visible = false
+      return
+    }
+
     const cell = this.intersectGridCell()
     this.hoveredCell = cell
     this.hoverCube.visible = Boolean(cell)
@@ -477,11 +502,38 @@ export class Lab04App {
     this.active = true
     this.activation.classList.add('is-hidden')
     this.rootEl.focus()
+
+    if (event.button !== 0 && event.button !== 2) return
+    this.pointerDownState = {
+      pointerId: event.pointerId,
+      button: event.button,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragged: false,
+    }
+  }
+
+  private onPointerUp = (event: PointerEvent): void => {
+    if (this.mode !== 'build' || this.pointerDownState?.pointerId !== event.pointerId) return
+
+    const pointerState = this.pointerDownState
+    this.pointerDownState = null
+
+    const moved = Math.hypot(event.clientX - pointerState.startX, event.clientY - pointerState.startY)
+    if (pointerState.dragged || moved > DRAG_THRESHOLD_PX) {
+      this.updatePointer(event)
+      const cell = this.intersectGridCell()
+      this.hoveredCell = cell
+      this.hoverCube.visible = Boolean(cell)
+      if (cell) this.hoverCube.position.set(cell.x, cell.y + 0.5, cell.z)
+      return
+    }
+
     this.updatePointer(event)
-    const cell = this.intersectGridCell()
+    const cell = this.intersectGridCell(pointerState.button === 2)
     if (!cell) return
 
-    if (event.button === 2) {
+    if (pointerState.button === 2) {
       this.removeAt(cell)
       return
     }
@@ -496,6 +548,10 @@ export class Lab04App {
     if (!module) return
     this.addModuleToScene(module)
     this.updateAllUi()
+  }
+
+  private onPointerCancel = (event: PointerEvent): void => {
+    if (this.pointerDownState?.pointerId === event.pointerId) this.pointerDownState = null
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
@@ -518,8 +574,14 @@ export class Lab04App {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
   }
 
-  private intersectGridCell(): GridPosition | null {
+  private intersectGridCell(preferOccupied = false): GridPosition | null {
     this.raycaster.setFromCamera(this.pointer, this.camera)
+
+    const modulePosition = this.intersectModulePosition()
+    if (modulePosition) {
+      return preferOccupied ? modulePosition : this.nextFreeCell(modulePosition.x, modulePosition.z)
+    }
+
     const point = new THREE.Vector3()
     if (!this.raycaster.ray.intersectPlane(this.mousePlane, point)) return null
 
@@ -527,6 +589,30 @@ export class Lab04App {
     const z = Math.round(point.z)
     if (x < -1 || x > 1 || z < -2 || z > 2) return null
 
+    return preferOccupied ? this.topOccupiedCell(x, z) : this.nextFreeCell(x, z)
+  }
+
+  private intersectModulePosition(): GridPosition | null {
+    const intersections = this.raycaster.intersectObjects([...this.moduleMeshes.values()], true)
+    for (const intersection of intersections) {
+      if (!(intersection.object instanceof THREE.Mesh)) continue
+      const position = this.gridPositionFromObject(intersection.object)
+      if (position) return position
+    }
+    return null
+  }
+
+  private gridPositionFromObject(object: THREE.Object3D): GridPosition | null {
+    let current: THREE.Object3D | null = object
+    while (current) {
+      const position = current.userData.gridPosition as GridPosition | undefined
+      if (position) return { ...position }
+      current = current.parent
+    }
+    return null
+  }
+
+  private nextFreeCell(x: number, z: number): GridPosition | null {
     let y = 0
     for (let candidate = GRID.height - 1; candidate >= 0; candidate -= 1) {
       if (this.blueprint.getAt({ x, y: candidate, z })) {
@@ -538,9 +624,20 @@ export class Lab04App {
     return { x, y, z }
   }
 
+  private topOccupiedCell(x: number, z: number): GridPosition | null {
+    for (let y = GRID.height - 1; y >= 0; y -= 1) {
+      if (this.blueprint.getAt({ x, y, z })) return { x, y, z }
+    }
+    return null
+  }
+
   private addModuleToScene(module: PlacedModule): void {
     const mesh = createModuleMesh(module)
     mesh.position.set(module.gridPosition.x, module.gridPosition.y + 0.5, module.gridPosition.z)
+    mesh.traverse((object) => {
+      object.userData.moduleId = module.id
+      object.userData.gridPosition = { ...module.gridPosition }
+    })
     this.shipGroup.add(mesh)
     this.moduleMeshes.set(module.id, mesh)
   }
