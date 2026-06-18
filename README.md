@@ -1,10 +1,10 @@
-# LAB 04: Modular Shipbuilding
+# LAB 03: Modular Shipbuilding
 
 中文名：模块造船  
 项目类型：技术 Demo / 游戏原型  
 项目状态：原型
 
-Modular Shipbuilding 是个人网站 LAB / Projects 系列中的第 4 个项目。它接在「数值高塔」「水体沙盒」「网格防御」之后，作为 LAB 04 出现，核心体验是：用模块搭建船体，然后下水测试浮力、重心、吃水与稳定性。
+Modular Shipbuilding 是个人网站 LAB / Projects 系列中的第 3 个项目。它接在「数值高塔」「水体沙盒」「网格防御」之后，作为 LAB 03 出现，核心体验是：用模块搭建船体，然后下水测试浮力、重心、吃水与稳定性。
 
 ## 核心玩法
 
@@ -66,10 +66,10 @@ base: command === 'serve' ? '/' : '/Modular-Shipbuilding/'
 base: '/'
 ```
 
-如果仓库改名为 `lab-04-modular-shipbuilding`，可改为：
+如果仓库改名为 `lab-03-modular-shipbuilding`，可改为：
 
 ```ts
-base: '/lab-04-modular-shipbuilding/'
+base: '/lab-03-modular-shipbuilding/'
 ```
 
 ## iframe 嵌入
@@ -78,7 +78,7 @@ base: '/lab-04-modular-shipbuilding/'
 <div class="demo-frame-wrap">
   <iframe
     src="https://orandolee.github.io/Modular-Shipbuilding/?embed=1"
-    title="LAB 04: Modular Shipbuilding"
+    title="LAB 03: Modular Shipbuilding"
     loading="lazy"
     allow="fullscreen"
     allowfullscreen
@@ -166,7 +166,7 @@ src/
   main.ts
   styles.css
   app/
-    Lab04App.ts
+    App entry
   build/
     ShipBlueprint.ts
   modules/
@@ -187,7 +187,7 @@ public/
 
 ## 已实现功能
 
-- LAB 04 开始界面，实验编号显示为 003，项目序号显示为 04
+- LAB 03 开始界面，实验编号显示为 003，项目序号显示为 03
 - 基于 SVG logo 的开场缩放动画
 - 3D 蓝图船坞与网格放置
 - 8 种模块选择、放置、删除和清空
