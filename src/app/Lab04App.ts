@@ -169,7 +169,7 @@ export class Lab04App {
           <div class="start-grid" aria-hidden="true">
             ${Array.from({ length: 12 }).map((_, i) => `<span style="--i:${i}"></span>`).join('')}
           </div>
-          <p class="experiment-id">实验编号 / 004</p>
+          <p class="experiment-id">实验编号 / 003</p>
           <div class="start-copy">
             <p class="present">DELEE LAB 呈现</p>
             <h1>MODULAR SHIPBUILDING</h1>
