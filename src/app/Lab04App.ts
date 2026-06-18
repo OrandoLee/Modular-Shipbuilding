@@ -165,7 +165,7 @@ export class Lab04App {
           <img src="./lab.svg" alt="" />
         </div>
 
-        <section class="start-screen" aria-label="LAB 04 开始界面">
+        <section class="start-screen" aria-label="LAB 03 开始界面">
           <div class="start-grid" aria-hidden="true">
             ${Array.from({ length: 12 }).map((_, i) => `<span style="--i:${i}"></span>`).join('')}
           </div>
@@ -173,7 +173,7 @@ export class Lab04App {
           <div class="start-copy">
             <p class="present">DELEE LAB 呈现</p>
             <h1>MODULAR SHIPBUILDING</h1>
-            <p class="lab-outline">LAB-04</p>
+            <p class="lab-outline">LAB-03</p>
             <div class="start-rule"></div>
             <div class="directive">
               <span>行动指令</span>
@@ -204,12 +204,12 @@ export class Lab04App {
           </aside>
         </section>
 
-        <main class="lab-stage" aria-label="LAB 04 模块造船实验">
+        <main class="lab-stage" aria-label="LAB 03 模块造船实验">
           <div class="canvas-wrap"></div>
 
           <header class="topbar">
             <div>
-              <p>LAB 04 / 模块造船</p>
+              <p>LAB 03 / 模块造船</p>
               <h2>Modular Shipbuilding</h2>
             </div>
             <div class="topbar-actions">
@@ -621,7 +621,7 @@ export class Lab04App {
     const report = generateReport(stats, this.lastFrame)
     this.reportPanel.innerHTML = `
       <div class="panel-heading">
-        <p>诊断报告 / LAB 04</p>
+        <p>诊断报告 / LAB 03</p>
         <h3>${report.result}</h3>
       </div>
       <div class="report-grid">
